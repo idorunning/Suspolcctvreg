@@ -1,0 +1,7 @@
+{
+  "name": "Sussex Camera Registry",
+  "description": "A reference tool for police to log and locate accessible CCTV and doorbell cameras for investigations.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

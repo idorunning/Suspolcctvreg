@@ -1,0 +1,10 @@
+{
+  "projectId": "search-coordinator",
+  "appId": "1:509100068098:web:199c3c2bc2a5704484861b",
+  "apiKey": "AIzaSyB_qYouFFhoX92uwoXUbA0JmfvR-STFmOI",
+  "authDomain": "search-coordinator.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-b5e6d5d6-4145-4919-aa7e-642847bc0dd9",
+  "storageBucket": "search-coordinator.firebasestorage.app",
+  "messagingSenderId": "509100068098",
+  "measurementId": ""
+}

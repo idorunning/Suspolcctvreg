@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+.cone-glow-selected {
+  filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.8));
+}
+
+.cone-glow-default {
+  filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.6));
+}
+
+.cone-glow-draft {
+  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.8));
+}
