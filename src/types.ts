@@ -1,34 +1,42 @@
 export type CameraType = 'cctv' | 'police_council' | 'other' | 'pfs';
 export type UserRole = 'admin' | 'user' | 'viewer';
 export type UserStatus = 'pending' | 'approved';
-export type EventAction = 'login' | 'logout' | 'camera_added' | 'camera_amended' | 'camera_removed';
+export type EventAction =
+  | 'login'
+  | 'logout'
+  | 'camera_added'
+  | 'camera_amended'
+  | 'camera_removed';
+
+// ISO-8601 date strings from the backend API.
+export type Timestamp = string;
 
 export interface Camera {
   id: string;
-  name?: string;
-  address?: string;
+  name?: string | null;
+  address?: string | null;
   type: CameraType;
-  ownerName?: string;
-  policeReferenceNumber?: string;
+  ownerName?: string | null;
+  policeReferenceNumber?: string | null;
   latitude: number;
   longitude: number;
-  direction?: number;
-  fieldOfView?: number;
-  viewDistance?: number;
+  direction?: number | null;
+  fieldOfView?: number | null;
+  viewDistance?: number | null;
   addedBy: string;
   creatorEmail: string;
-  lastVerifiedAt?: any; // Firestore Timestamp
-  createdAt: any; // Firestore Timestamp
-  updatedAt: any; // Firestore Timestamp
+  lastVerifiedAt?: Timestamp | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 export interface User {
   id: string;
   email: string;
+  displayName?: string | null;
   role: UserRole;
   status: UserStatus;
-  needsPasswordChange?: boolean;
-  createdAt: any;
+  createdAt: Timestamp;
 }
 
 export interface EventLog {
@@ -36,6 +44,6 @@ export interface EventLog {
   action: EventAction;
   userId: string;
   userEmail: string;
-  details?: string;
-  timestamp: any; // Firestore Timestamp
+  details?: string | null;
+  timestamp: Timestamp;
 }
