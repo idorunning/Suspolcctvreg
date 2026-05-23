@@ -32,6 +32,7 @@ export default function CompanionApp({
   const [type, setType] = useState<CameraKind>('cctv');
   const [ownerName, setOwnerName] = useState('');
   const [policeRef, setPoliceRef] = useState('');
+  const [publicOutputUrl, setPublicOutputUrl] = useState('');
   const [direction, setDirection] = useState<number | ''>('');
 
   const getLocation = () => {
@@ -67,6 +68,12 @@ export default function CompanionApp({
       return;
     }
 
+    const trimmedUrl = publicOutputUrl.trim();
+    if (trimmedUrl !== '' && !/^https?:\/\//i.test(trimmedUrl)) {
+      setLocationError('Public feed URL must start with http:// or https://');
+      return;
+    }
+
     setIsSubmitting(true);
     setLocationError(null);
     try {
@@ -76,6 +83,7 @@ export default function CompanionApp({
         longitude: location.lng,
         ownerName: ownerName.trim() || undefined,
         policeReferenceNumber: policeRef.trim() || undefined,
+        publicOutputUrl: trimmedUrl || undefined,
         direction: direction === '' ? undefined : Number(direction),
       });
 
@@ -85,6 +93,7 @@ export default function CompanionApp({
         setLocation(null);
         setOwnerName('');
         setPoliceRef('');
+        setPublicOutputUrl('');
         setDirection('');
       }, 3000);
     } catch (err) {
@@ -227,6 +236,24 @@ export default function CompanionApp({
                   onChange={(e) => setPoliceRef(e.target.value)}
                   className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., CAD 1234"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="companion-feed-url"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
+                  Public Feed URL (Optional)
+                </label>
+                <input
+                  id="companion-feed-url"
+                  type="url"
+                  inputMode="url"
+                  value={publicOutputUrl}
+                  onChange={(e) => setPublicOutputUrl(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500"
+                  placeholder="https://… public feed only"
                 />
               </div>
 

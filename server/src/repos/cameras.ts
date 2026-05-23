@@ -8,6 +8,7 @@ export interface CameraRow {
   address: string | null;
   ownerName: string | null;
   policeReferenceNumber: string | null;
+  publicOutputUrl: string | null;
   latitude: number;
   longitude: number;
   direction: number | null;
@@ -27,6 +28,7 @@ interface DbCameraRow {
   address: string | null;
   owner_name: string | null;
   police_reference_number: string | null;
+  public_output_url: string | null;
   latitude: number;
   longitude: number;
   direction: number | null;
@@ -47,6 +49,7 @@ function mapCamera(row: DbCameraRow): CameraRow {
     address: row.address,
     ownerName: row.owner_name,
     policeReferenceNumber: row.police_reference_number,
+    publicOutputUrl: row.public_output_url,
     latitude: Number(row.latitude),
     longitude: Number(row.longitude),
     direction: row.direction === null ? null : Number(row.direction),
@@ -77,10 +80,10 @@ export async function insertCamera(
 ): Promise<CameraRow> {
   const { rows } = await query<DbCameraRow>(
     `INSERT INTO cameras (
-      type, name, address, owner_name, police_reference_number,
+      type, name, address, owner_name, police_reference_number, public_output_url,
       latitude, longitude, direction, field_of_view, view_distance,
       added_by, creator_email
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
     RETURNING *`,
     [
       input.type,
@@ -88,6 +91,7 @@ export async function insertCamera(
       input.address ?? null,
       input.ownerName ?? null,
       input.policeReferenceNumber ?? null,
+      input.publicOutputUrl ?? null,
       input.latitude,
       input.longitude,
       input.direction ?? null,
@@ -106,6 +110,7 @@ const COLUMN_MAP: Record<keyof CameraUpdateInput, string> = {
   address: 'address',
   ownerName: 'owner_name',
   policeReferenceNumber: 'police_reference_number',
+  publicOutputUrl: 'public_output_url',
   latitude: 'latitude',
   longitude: 'longitude',
   direction: 'direction',

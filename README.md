@@ -136,6 +136,23 @@ Roles, enforced on every request by `requireRole` middleware:
 
 Client-side checks gate the UI; the server is the source of truth.
 
+## Live feeds
+
+Cameras may carry an optional **Public Feed URL** (`publicOutputUrl`). The
+**Live Feeds** dashboard lists every camera that has one and lets an operator
+open the source feed in a new browser tab ("Open Feed") or jump to it on the
+map ("Locate on Map").
+
+Feeds are **not embedded inline**: most public webcam/traffic sites refuse to
+be framed (`X-Frame-Options` / CSP `frame-ancestors`), so inline embedding is
+unreliable, and embedding would also pull third-party content into the
+air-gapped page. Link-out keeps the registry page same-origin (consistent with
+the strict `connect-src 'self'` CSP in `nginx.conf`); whether the source feed
+is reachable is governed by the host network's egress policy, not the app.
+
+Only public, non-sensitive feed URLs should be recorded. The URL must be an
+`http(s)` link; this is validated on both the client and the server.
+
 ## Audit logging
 
 Every mutating request appends a row to `events`. UPDATE and DELETE on that

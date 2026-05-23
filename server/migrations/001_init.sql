@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS cameras (
   address                   TEXT,
   owner_name                TEXT,
   police_reference_number   TEXT,
+  public_output_url         TEXT,
   latitude                  DOUBLE PRECISION NOT NULL CHECK (latitude BETWEEN -90 AND 90),
   longitude                 DOUBLE PRECISION NOT NULL CHECK (longitude BETWEEN -180 AND 180),
   direction                 DOUBLE PRECISION CHECK (direction IS NULL OR (direction >= 0 AND direction < 360)),

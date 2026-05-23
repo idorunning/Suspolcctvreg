@@ -7,6 +7,7 @@ import Auth from './components/Auth';
 import AdminPanel from './components/AdminPanel';
 import OverviewPanel from './components/OverviewPanel';
 import CompanionApp from './components/CompanionApp';
+import LiveDashboard from './components/LiveDashboard';
 import {
   Shield,
   LogOut,
@@ -20,6 +21,7 @@ import {
   BarChart3,
   Map as MapIcon,
   Smartphone,
+  Video,
 } from 'lucide-react';
 import { api, getCachedUser, getToken, setSession } from './services/api';
 import { subscribeCameras } from './services/realtime';
@@ -47,6 +49,7 @@ export default function App() {
 
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showOverview, setShowOverview] = useState(false);
+  const [showLiveDashboard, setShowLiveDashboard] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [appMode, setAppMode] = useState<'registry' | 'companion'>('registry');
 
@@ -230,6 +233,11 @@ export default function App() {
     selectedCamera && user && (user.role === 'admin' || user.role === 'user'),
   );
   const canAdd = user?.role === 'admin' || user?.role === 'user';
+
+  const liveFeedCount = useMemo(
+    () => cameras.filter((c) => !!c.publicOutputUrl).length,
+    [cameras],
+  );
 
   const draftOrigin = useMemo(() => {
     if (newCameraLocation) {
@@ -432,6 +440,18 @@ export default function App() {
               <span className="hidden sm:inline">Overview</span>
             </button>
 
+            <button
+              onClick={() => setShowLiveDashboard(true)}
+              className="flex items-center gap-2 bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-sm font-medium border border-emerald-200 hover:bg-emerald-200 transition-colors whitespace-nowrap"
+              title="Live feeds dashboard"
+            >
+              <Video size={16} className="animate-pulse" />
+              <span className="hidden sm:inline">Live Feeds</span>
+              <span className="bg-emerald-600 text-emerald-50 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {liveFeedCount}
+              </span>
+            </button>
+
             <div className="flex items-center gap-2 ml-2 border-l border-gray-200 pl-2 sm:pl-4">
               <button
                 onClick={() => setShowHeatmap(!showHeatmap)}
@@ -561,6 +581,19 @@ export default function App() {
           cameras={cameras}
           usersCount={usersCount}
           onClose={() => setShowOverview(false)}
+        />
+      )}
+
+      {showLiveDashboard && (
+        <LiveDashboard
+          cameras={cameras}
+          onSelectOnMap={(cam) => {
+            setSelectedCamera(cam);
+            setMapCenter([cam.latitude, cam.longitude]);
+            setFocusTrigger((prev) => prev + 1);
+            setShowLiveDashboard(false);
+          }}
+          onClose={() => setShowLiveDashboard(false)}
         />
       )}
 

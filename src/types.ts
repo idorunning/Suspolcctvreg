@@ -18,6 +18,7 @@ export interface Camera {
   type: CameraType;
   ownerName?: string | null;
   policeReferenceNumber?: string | null;
+  publicOutputUrl?: string | null;
   latitude: number;
   longitude: number;
   direction?: number | null;

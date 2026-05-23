@@ -46,6 +46,9 @@ export default function AddCameraModal({
     initialData?.policeReferenceNumber || '',
   );
   const [address, setAddress] = useState(initialData?.address || '');
+  const [publicOutputUrl, setPublicOutputUrl] = useState(
+    initialData?.publicOutputUrl || '',
+  );
   const [direction, setDirection] = useState<number | ''>(
     initialData?.direction ?? (draftDirection ?? ''),
   );
@@ -74,6 +77,13 @@ export default function AddCameraModal({
     setIsSaving(true);
     setError(null);
 
+    const trimmedUrl = publicOutputUrl.trim();
+    if (trimmedUrl !== '' && !/^https?:\/\//i.test(trimmedUrl)) {
+      setError('Public feed URL must start with http:// or https://');
+      setIsSaving(false);
+      return;
+    }
+
     try {
       await onSave({
         type,
@@ -82,6 +92,7 @@ export default function AddCameraModal({
         policeReferenceNumber:
           policeReferenceNumber.trim() === '' ? undefined : policeReferenceNumber,
         address: address.trim() === '' ? undefined : address,
+        publicOutputUrl: trimmedUrl === '' ? undefined : trimmedUrl,
         latitude: lat,
         longitude: lng,
         direction: direction === '' ? undefined : Number(direction),
@@ -239,6 +250,28 @@ export default function AddCameraModal({
             </div>
 
             <div>
+              <label
+                htmlFor="camera-feed-url"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Public Feed URL
+              </label>
+              <input
+                id="camera-feed-url"
+                type="url"
+                inputMode="url"
+                value={publicOutputUrl}
+                onChange={(e) => setPublicOutputUrl(e.target.value)}
+                placeholder="https://… (publicly accessible live feed)"
+                className="w-full border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Optional. Only public, non-sensitive feeds. Opens in a new tab from
+                the Live Feeds dashboard.
+              </p>
+            </div>
+
+            <div>
               <span className="block text-sm font-medium text-gray-700 mb-1">
                 Location &amp; Direction
               </span>
@@ -257,6 +290,8 @@ export default function AddCameraModal({
                         ownerName,
                         policeReferenceNumber,
                         address,
+                        publicOutputUrl:
+                          publicOutputUrl.trim() === '' ? undefined : publicOutputUrl,
                         direction: direction === '' ? undefined : Number(direction),
                         fieldOfView:
                           fieldOfView === '' ? undefined : Number(fieldOfView),

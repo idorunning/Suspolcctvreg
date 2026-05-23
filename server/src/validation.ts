@@ -16,12 +16,25 @@ const optionalString = (max: number) =>
 const numberInRange = (min: number, max: number) =>
   z.number().finite().min(min).max(max);
 
+const optionalUrl = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .transform((s) => s.trim())
+    .transform((s) => (s === '' ? null : s))
+    .nullable()
+    .optional()
+    .refine((v) => v == null || /^https?:\/\//i.test(v), {
+      message: 'Must be an http(s) URL',
+    });
+
 export const cameraCreateSchema = z.object({
   type: cameraTypeEnum,
   name: optionalString(200),
   address: optionalString(500),
   ownerName: optionalString(200),
   policeReferenceNumber: optionalString(100),
+  publicOutputUrl: optionalUrl(2048),
   latitude: numberInRange(-90, 90),
   longitude: numberInRange(-180, 180),
   direction: numberInRange(0, 359.999999).nullable().optional(),
