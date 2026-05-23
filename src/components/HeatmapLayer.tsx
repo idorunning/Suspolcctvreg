@@ -23,7 +23,7 @@ export default function HeatmapLayer({ cameras }: HeatmapLayerProps) {
       const dir = camera.direction;
       
       // If no direction/fov, just add the center point and a few points around it
-      if (dir === undefined || fov === undefined) {
+      if (dir == null || fov == null) {
          points.push([camera.latitude, camera.longitude, 1]);
          for (let d = 5; d <= dist; d += 10) {
            for (let a = 0; a < 360; a += 45) {
@@ -35,7 +35,6 @@ export default function HeatmapLayer({ cameras }: HeatmapLayerProps) {
       }
 
       const startAngle = dir - fov / 2;
-      const endAngle = dir + fov / 2;
       
       // Sample points inside the cone
       // Center point

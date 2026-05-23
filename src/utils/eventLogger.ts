@@ -1,22 +1,9 @@
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
-import { EventAction } from '../types';
+// Event logging moved server-side. The backend appends an events row for every
+// mutating request, so this module is retained only as a thin shim for any
+// call sites that have not yet been updated.
 
-export const logEvent = async (
-  action: EventAction,
-  userId: string,
-  userEmail: string,
-  details?: string
-) => {
-  try {
-    await addDoc(collection(db, 'events'), {
-      action,
-      userId,
-      userEmail,
-      details: details || null,
-      timestamp: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error('Failed to log event:', error);
-  }
+export type EventLogger = (...args: unknown[]) => Promise<void>;
+
+export const logEvent: EventLogger = async () => {
+  // No-op: the backend is the source of truth for audit logs.
 };
