@@ -25,18 +25,17 @@ export default function CoverageGapsLayer({ cameras }: CoverageGapsLayerProps) {
       
       const holePoints: [number, number][] = [];
       
-      const direction = camera.direction;
-      const fieldOfView = camera.fieldOfView;
-      if (direction != null && fieldOfView != null) {
+      if (camera.direction !== undefined && camera.fieldOfView !== undefined) {
         // Draw a cone
-        const halfFov = fieldOfView / 2;
-        const startAngle = direction - halfFov;
-
+        const halfFov = camera.fieldOfView / 2;
+        const startAngle = camera.direction - halfFov;
+        const endAngle = camera.direction + halfFov;
+        
         holePoints.push([centerLat, centerLng]); // Center point
-
-        const numPoints = Math.max(10, Math.floor(fieldOfView / 5));
+        
+        const numPoints = Math.max(10, Math.floor(camera.fieldOfView / 5));
         for (let i = 0; i <= numPoints; i++) {
-          const bearing = startAngle + (i * fieldOfView) / numPoints;
+          const bearing = startAngle + (i * camera.fieldOfView) / numPoints;
           const dest = calculateDestination(centerLat, centerLng, bearing, radius);
           holePoints.push([dest[0], dest[1]]);
         }

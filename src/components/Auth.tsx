@@ -1,28 +1,38 @@
 import React, { useState } from 'react';
+import { auth } from '../firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { Shield, Loader2 } from 'lucide-react';
-import { api, setSession, type CurrentUser } from '../services/api';
-import { config } from '../config';
+import { logEvent } from '../utils/eventLogger';
 
-interface AuthProps {
-  onSuccess: (user: CurrentUser) => void;
-}
-
-export default function Auth({ onSuccess }: AuthProps) {
+export default function Auth() {
+  const [isLogin, setIsLogin] = useState(true);
+  const [isReset, setIsReset] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setSuccess('');
+    
     try {
-      const { token, user } = await api.login(email, password);
-      setSession(token, user);
-      onSuccess(user);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign in');
+      if (isReset) {
+        await sendPasswordResetEmail(auth, email);
+        setSuccess('Password reset email sent. Please check your inbox.');
+        setIsReset(false);
+      } else if (isLogin) {
+        const cred = await signInWithEmailAndPassword(auth, email, password);
+        await logEvent('login', cred.user.uid, cred.user.email || '', 'User logged in');
+      } else {
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        await logEvent('login', cred.user.uid, cred.user.email || '', 'User registered and logged in');
+      }
+    } catch (err: any) {
+      setError(err.message || `Failed to ${isReset ? 'reset password' : isLogin ? 'sign in' : 'sign up'}`);
     } finally {
       setLoading(false);
     }
@@ -36,82 +46,103 @@ export default function Auth({ onSuccess }: AuthProps) {
         </div>
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Sussex Camera Registry</h1>
         <p className="text-gray-600 mb-8">
-          Secure police reference tool for logging and locating accessible CCTV and
-          doorbell cameras. Sign in with your Police network credentials.
+          Secure police reference tool for logging and locating accessible CCTV and doorbell cameras.
         </p>
-
+        
         {error && (
-          <div
-            role="alert"
-            className="bg-red-50 text-red-600 p-3 rounded-md mb-4 text-sm text-left border border-red-200"
-          >
+          <div className="bg-red-50 text-red-600 p-3 rounded-md mb-4 text-sm text-left border border-red-200">
             {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="bg-green-50 text-green-600 p-3 rounded-md mb-4 text-sm text-left border border-green-200">
+            {success}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-left">
           <div>
-            <label
-              htmlFor="auth-email"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
-              Work Email or Username
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Work Email</label>
             <input
-              id="auth-email"
-              type="text"
+              type="email"
               required
-              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="officer@sussex.police.uk"
+              placeholder="officer@police.uk"
             />
           </div>
-          <div>
-            <label
-              htmlFor="auth-password"
-              className="block text-sm font-medium text-gray-700 mb-1"
-            >
-              Password
-            </label>
-            <input
-              id="auth-password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="••••••••"
-            />
-          </div>
+          {!isReset && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="••••••••"
+              />
+            </div>
+          )}
           <button
             type="submit"
             disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-70 mt-4"
           >
-            {loading ? <Loader2 size={20} className="animate-spin" /> : 'Sign In'}
+            {loading ? <Loader2 size={20} className="animate-spin" /> : (isReset ? 'Reset Password' : isLogin ? 'Sign In' : 'Request Access')}
           </button>
         </form>
+        
+        <div className="mt-4 flex flex-col gap-2 text-sm">
+          {!isReset && (
+            <button 
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError('');
+                setSuccess('');
+              }} 
+              className="text-blue-600 hover:underline"
+            >
+              {isLogin ? "Don't have an account? Request Access" : "Already have an account? Sign In"}
+            </button>
+          )}
+          
+          {isLogin && !isReset && (
+            <button 
+              onClick={() => {
+                setIsReset(true);
+                setError('');
+                setSuccess('');
+              }} 
+              className="text-gray-500 hover:underline"
+            >
+              Forgot Password?
+            </button>
+          )}
+
+          {isReset && (
+            <button 
+              onClick={() => {
+                setIsReset(false);
+                setError('');
+                setSuccess('');
+              }} 
+              className="text-blue-600 hover:underline"
+            >
+              Back to Sign In
+            </button>
+          )}
+        </div>
 
         <p className="mt-6 text-xs text-gray-500">
-          Authorised personnel only. All access is logged and monitored. Passwords
-          are managed by your Police network account — use your standard
-          self-service portal to reset.
-          {config.adminContactEmail && (
-            <>
-              {' '}Need help?{' '}
-              <a
-                href={`mailto:${config.adminContactEmail}`}
-                className="text-blue-600 hover:underline"
-              >
-                Contact Administrator
-              </a>
-            </>
-          )}
+          Authorized personnel only. All access is logged and monitored. New accounts require administrator approval.{' '}
+          <a href="mailto:nathan.tracey@sussex.police.uk" className="text-blue-600 hover:underline">Contact Administrator</a>
         </p>
       </div>
     </div>
   );
 }
+
