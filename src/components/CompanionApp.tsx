@@ -4,6 +4,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Camera as CameraType } from '../types';
 import { logEvent } from '../utils/eventLogger';
+import { scanForPII } from '../utils/privacy';
 
 interface CompanionAppProps {
   user: any;
@@ -20,8 +21,8 @@ export default function CompanionApp({ user, cameras, onSwitchMode, onLogout }: 
   const [success, setSuccess] = useState(false);
 
   const [type, setType] = useState<string>('cctv');
-  const [ownerName, setOwnerName] = useState('');
   const [policeRef, setPoliceRef] = useState('');
+  const [publicOutputUrl, setPublicOutputUrl] = useState('');
   const [direction, setDirection] = useState<number | ''>('');
 
   const getLocation = () => {
@@ -57,6 +58,19 @@ export default function CompanionApp({ user, cameras, onSwitchMode, onLogout }: 
       return;
     }
 
+    // PII Scanner validation
+    const refViolation = scanForPII(policeRef);
+    if (refViolation) {
+      setLocationError(`PII detected in Police Reference: ${refViolation}`);
+      return;
+    }
+
+    const urlViolation = scanForPII(publicOutputUrl);
+    if (urlViolation) {
+      setLocationError(`PII detected in Public Output URL: ${urlViolation}`);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const cameraData: any = {
@@ -69,21 +83,20 @@ export default function CompanionApp({ user, cameras, onSwitchMode, onLogout }: 
         updatedAt: serverTimestamp()
       };
 
-      if (ownerName.trim()) cameraData.ownerName = ownerName.trim();
       if (policeRef.trim()) cameraData.policeReferenceNumber = policeRef.trim();
+      if (publicOutputUrl.trim()) cameraData.publicOutputUrl = publicOutputUrl.trim();
       if (direction !== '') cameraData.direction = Number(direction);
 
       await addDoc(collection(db, 'cameras'), cameraData);
       
-      const name = ownerName || 'Unknown';
-      await logEvent('camera_added', user.uid, user.email, `Added camera ${name}/${location.lat.toFixed(6)}&${location.lng.toFixed(6)} via Companion`);
+      await logEvent('camera_added', user.uid, user.email, `Added camera via Companion at ${location.lat.toFixed(6)}&${location.lng.toFixed(6)}`);
       
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
         setLocation(null);
-        setOwnerName('');
         setPoliceRef('');
+        setPublicOutputUrl('');
         setDirection('');
       }, 3000);
     } catch (error: any) {
@@ -163,25 +176,37 @@ export default function CompanionApp({ user, cameras, onSwitchMode, onLogout }: 
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name (Optional)</label>
-                <input
-                  type="text"
-                  value={ownerName}
-                  onChange={(e) => setOwnerName(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., John Smith, Tesco"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Police Ref Number (Optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex justify-between">
+                  <span>Police Ref Number (Optional)</span>
+                  <span className="text-xs text-blue-600 font-semibold font-sans">No PII</span>
+                </label>
                 <input
                   type="text"
                   value={policeRef}
                   onChange={(e) => setPoliceRef(e.target.value)}
                   className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 47230123456"
+                  placeholder="e.g., CAD 1234 — Do not enter PII"
                 />
+                {scanForPII(policeRef) && (
+                  <p className="text-xs text-red-600 mt-1 font-semibold">{scanForPII(policeRef)}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex justify-between">
+                  <span>Public Output URL (Optional)</span>
+                  <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 rounded">Sussex Public Cam</span>
+                </label>
+                <input
+                  type="text"
+                  value={publicOutputUrl}
+                  onChange={(e) => setPublicOutputUrl(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 text-sm"
+                  placeholder="e.g. https://www.visitbrighton.com/webcam"
+                />
+                {scanForPII(publicOutputUrl) && (
+                  <p className="text-xs text-red-600 mt-1 font-semibold">{scanForPII(publicOutputUrl)}</p>
+                )}
               </div>
 
               <div>

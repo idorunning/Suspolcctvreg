@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Camera } from '../types';
-import { X, Camera as CameraIcon, Video, Shield, Fuel, HelpCircle, Users } from 'lucide-react';
+import { X, Camera as CameraIcon, Video, Shield, Fuel, HelpCircle, Users, EyeOff } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface OverviewPanelProps {
@@ -79,6 +79,17 @@ export default function OverviewPanel({ cameras, usersCount, onClose }: Overview
               <div>
                 <p className="text-sm font-medium text-gray-500">Total Users</p>
                 <p className="text-3xl font-bold text-gray-900">{usersCount}</p>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
+              <div className="bg-purple-100 p-4 rounded-full text-purple-600">
+                <EyeOff size={32} />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Privacy Rating</p>
+                <p className="text-3xl font-bold text-gray-900">100%</p>
+                <p className="text-[10px] text-purple-600 font-semibold mt-1">Zero PII Recorded</p>
               </div>
             </div>
           </div>

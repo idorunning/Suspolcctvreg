@@ -8,8 +8,8 @@ export interface Camera {
   name?: string;
   address?: string;
   type: CameraType;
-  ownerName?: string;
   policeReferenceNumber?: string;
+  publicOutputUrl?: string;
   latitude: number;
   longitude: number;
   direction?: number;

@@ -10,7 +10,8 @@ import AdminPanel from './components/AdminPanel';
 import OverviewPanel from './components/OverviewPanel';
 import ChangePassword from './components/ChangePassword';
 import CompanionApp from './components/CompanionApp';
-import { Shield, LogOut, Loader2, Crosshair, Users, Edit2, Clock, Trash2, CheckCircle, PanelLeftClose, PanelLeftOpen, BarChart3, Map as MapIcon, Layers, Smartphone } from 'lucide-react';
+import LiveDashboard from './components/LiveDashboard';
+import { Shield, LogOut, Loader2, Crosshair, Users, Edit2, Clock, Trash2, CheckCircle, PanelLeftClose, PanelLeftOpen, BarChart3, Map as MapIcon, Layers, Smartphone, Video } from 'lucide-react';
 import { logEvent } from './utils/eventLogger';
 
 enum OperationType {
@@ -74,6 +75,7 @@ export default function App() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showOverview, setShowOverview] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showLiveDashboard, setShowLiveDashboard] = useState(false);
   const [appMode, setAppMode] = useState<'registry' | 'companion'>('registry');
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -219,7 +221,7 @@ export default function App() {
 
         // Ensure optional fields are not undefined (Firestore throws on undefined)
         // If they are undefined, we use deleteField() to remove them
-        const optionalFields = ['direction', 'fieldOfView', 'viewDistance', 'ownerName', 'policeReferenceNumber', 'name', 'address'] as const;
+        const optionalFields = ['direction', 'fieldOfView', 'viewDistance', 'policeReferenceNumber', 'publicOutputUrl', 'name', 'address'] as const;
         optionalFields.forEach(field => {
           if (updatePayload[field] === undefined) {
             updatePayload[field] = deleteField();
@@ -227,7 +229,7 @@ export default function App() {
         });
 
         // Clean up legacy fields if they exist on the document
-        const legacyFields = ['notes', 'contactNumber', 'referenceNumber', 'contactDetails'];
+        const legacyFields = ['notes', 'contactNumber', 'referenceNumber', 'contactDetails', 'ownerName'];
         legacyFields.forEach(field => {
           if ((selectedCamera as any)[field] !== undefined) {
             updatePayload[field] = deleteField();
@@ -235,10 +237,9 @@ export default function App() {
         });
 
         await updateDoc(doc(db, 'cameras', selectedCamera.id), updatePayload);
-        const ownerName = cameraData.ownerName || selectedCamera.ownerName || 'Unknown';
         const lat = cameraData.latitude || selectedCamera.latitude;
         const lng = cameraData.longitude || selectedCamera.longitude;
-        const cameraName = cameraData.name || selectedCamera.name || `${ownerName}/${lat.toFixed(6)}&${lng.toFixed(6)}`;
+        const cameraName = cameraData.name || selectedCamera.name || `${selectedCamera.type}/${lat.toFixed(6)}&${lng.toFixed(6)}`;
         await logEvent('camera_amended', user.uid, user.email || '', `Amended camera ${cameraName}`);
         setIsEditingCamera(false);
       } else {
@@ -250,7 +251,7 @@ export default function App() {
           updatedAt: serverTimestamp()
         };
 
-        const optionalFields = ['direction', 'fieldOfView', 'viewDistance', 'ownerName', 'policeReferenceNumber', 'name', 'address'] as const;
+        const optionalFields = ['direction', 'fieldOfView', 'viewDistance', 'policeReferenceNumber', 'publicOutputUrl', 'name', 'address'] as const;
         optionalFields.forEach(field => {
           if (createPayload[field] === undefined) {
             delete createPayload[field];
@@ -258,10 +259,9 @@ export default function App() {
         });
 
         const docRef = await addDoc(collection(db, 'cameras'), createPayload);
-        const ownerName = cameraData.ownerName || 'Unknown';
         const lat = cameraData.latitude!;
         const lng = cameraData.longitude!;
-        const cameraName = cameraData.name || `${ownerName}/${lat.toFixed(6)}&${lng.toFixed(6)}`;
+        const cameraName = cameraData.name || `${cameraData.type}/${lat.toFixed(6)}&${lng.toFixed(6)}`;
         await logEvent('camera_added', user.uid, user.email || '', `Added camera ${cameraName}`);
         setNewCameraLocation(null);
         setIsAddingCamera(false);
@@ -279,10 +279,9 @@ export default function App() {
     
     try {
       await deleteDoc(doc(db, 'cameras', selectedCamera.id));
-      const ownerName = selectedCamera.ownerName || 'Unknown';
       const lat = selectedCamera.latitude;
       const lng = selectedCamera.longitude;
-      const cameraName = selectedCamera.name || `${ownerName}/${lat.toFixed(6)}&${lng.toFixed(6)}`;
+      const cameraName = selectedCamera.name || `${selectedCamera.type}/${lat.toFixed(6)}&${lng.toFixed(6)}`;
       await logEvent('camera_removed', user.uid, user.email || '', `Deleted camera ${cameraName}`);
       setSelectedCamera(null);
       setIsEditingCamera(false);
@@ -331,10 +330,9 @@ export default function App() {
       });
 
       await updateDoc(doc(db, 'cameras', selectedCamera.id), updatePayload);
-      const ownerName = selectedCamera.ownerName || 'Unknown';
       const lat = selectedCamera.latitude;
       const lng = selectedCamera.longitude;
-      const cameraName = selectedCamera.name || `${ownerName}/${lat.toFixed(6)}&${lng.toFixed(6)}`;
+      const cameraName = selectedCamera.name || `${selectedCamera.type}/${lat.toFixed(6)}&${lng.toFixed(6)}`;
       await logEvent('camera_amended', user.uid, user.email || '', `Verified camera ${cameraName} as active`);
       setIsEditingCamera(false);
     } catch (error) {
@@ -516,6 +514,18 @@ export default function App() {
               <BarChart3 size={16} />
               <span className="hidden sm:inline">Overview</span>
             </button>
+
+            <button
+              onClick={() => setShowLiveDashboard(true)}
+              className="flex items-center gap-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-3 py-1 rounded-full text-sm font-medium border border-emerald-200 transition-colors whitespace-nowrap"
+              title="Live streams camera dashboard"
+            >
+              <Video size={16} className="text-emerald-605 animate-pulse" />
+              <span>Live Feeds</span>
+              <span className="bg-emerald-600 text-emerald-50 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+                {cameras.filter(c => !!c.publicOutputUrl).length}
+              </span>
+            </button>
             
             <div className="flex items-center gap-2 ml-2 border-l border-gray-200 pl-2 sm:pl-4">
               <button
@@ -646,6 +656,19 @@ export default function App() {
           cameras={cameras} 
           usersCount={usersCount} 
           onClose={() => setShowOverview(false)} 
+        />
+      )}
+
+      {showLiveDashboard && (
+        <LiveDashboard
+          cameras={cameras}
+          onSelectOnMap={(cam) => {
+            setSelectedCamera(cam);
+            setMapCenter([cam.latitude, cam.longitude]);
+            setFocusTrigger(prev => prev + 1);
+            setShowLiveDashboard(false);
+          }}
+          onClose={() => setShowLiveDashboard(false)}
         />
       )}
       

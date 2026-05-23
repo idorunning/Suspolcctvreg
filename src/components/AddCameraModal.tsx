@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, CameraType } from '../types';
-import { X, Save, Crosshair, Edit2, Camera as CameraIcon, Video, Shield, Fuel, HelpCircle, ChevronDown, Cctv, Trash2, CheckCircle } from 'lucide-react';
+import { X, Save, Crosshair, Edit2, Camera as CameraIcon, Video, Shield, Fuel, HelpCircle, ChevronDown, Cctv, Trash2, CheckCircle, ShieldAlert, EyeOff } from 'lucide-react';
+import { scanForPII } from '../utils/privacy';
 
 interface AddCameraModalProps {
   lat: number;
@@ -27,9 +28,9 @@ export default function AddCameraModal({ lat, lng, onClose, onSave, initialData,
   const [type, setType] = useState<CameraType>(initialData?.type || 'cctv');
   const [name, setName] = useState(initialData?.name || '');
   const [isEditingName, setIsEditingName] = useState(false);
-  const [ownerName, setOwnerName] = useState(initialData?.ownerName || '');
   const [policeReferenceNumber, setPoliceReferenceNumber] = useState(initialData?.policeReferenceNumber || '');
   const [address, setAddress] = useState(initialData?.address || '');
+  const [publicOutputUrl, setPublicOutputUrl] = useState(initialData?.publicOutputUrl || '');
   const [direction, setDirection] = useState<number | ''>(initialData?.direction ?? (draftDirection ?? ''));
   const [fieldOfView, setFieldOfView] = useState<number | ''>(initialData?.fieldOfView ?? 90);
   const [viewDistance, setViewDistance] = useState<number | ''>(initialData?.viewDistance ?? (draftDistance ?? 30));
@@ -61,13 +62,42 @@ export default function AddCameraModal({ lat, lng, onClose, onSave, initialData,
     setIsSaving(true);
     setError(null);
 
+    // Scan for PII in all textual inputs
+    const namePiiViolation = scanForPII(name);
+    if (namePiiViolation) {
+      setError(`PII detected in Camera Name: ${namePiiViolation}`);
+      setIsSaving(false);
+      return;
+    }
+
+    const refPiiViolation = scanForPII(policeReferenceNumber);
+    if (refPiiViolation) {
+      setError(`PII detected in Police Reference: ${refPiiViolation}`);
+      setIsSaving(false);
+      return;
+    }
+
+    const addressPiiViolation = scanForPII(address);
+    if (addressPiiViolation) {
+      setError(`PII detected in Location Address: ${addressPiiViolation}`);
+      setIsSaving(false);
+      return;
+    }
+
+    const urlPiiViolation = scanForPII(publicOutputUrl);
+    if (urlPiiViolation) {
+      setError(`PII detected in Public Output URL: ${urlPiiViolation}`);
+      setIsSaving(false);
+      return;
+    }
+
     try {
       await onSave({
         type,
         name: name.trim() === '' ? undefined : name,
-        ownerName: ownerName.trim() === '' ? undefined : ownerName,
         policeReferenceNumber: policeReferenceNumber.trim() === '' ? undefined : policeReferenceNumber,
         address: address.trim() === '' ? undefined : address,
+        publicOutputUrl: publicOutputUrl.trim() === '' ? undefined : publicOutputUrl,
         latitude: lat,
         longitude: lng,
         direction: direction === '' ? undefined : Number(direction),
@@ -110,15 +140,26 @@ export default function AddCameraModal({ lat, lng, onClose, onSave, initialData,
         </div>
 
         <div className="p-4 overflow-y-auto flex-1">
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-3 mb-4 rounded-r-md flex gap-2 items-start">
+            <EyeOff size={20} className="text-blue-700 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-blue-800 text-sm font-semibold">Privacy-First Policy</p>
+              <p className="text-blue-700 text-xs mt-0.5">
+                Adding Personally Identifiable Information (PII) is strictly prohibited. Do not record people's names, phone numbers, emails, or exact house/flat numbers.
+              </p>
+            </div>
+          </div>
+
           <div className="bg-amber-50 border-l-4 border-amber-500 p-3 mb-4 rounded-r-md">
-            <p className="text-amber-800 text-sm font-medium">
+            <p className="text-amber-800 text-xs font-medium">
               Warning: No ANPR camera locations are to be recorded on the registry. Only publicly visible, or publicly accessible cameras are to be added.
             </p>
           </div>
 
           {error && (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
-              <p className="text-red-700 text-sm">{error}</p>
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4 rounded flex gap-2">
+              <ShieldAlert size={20} className="text-red-600 mt-0.5 flex-shrink-0" />
+              <p className="text-red-700 text-sm font-medium">{error}</p>
             </div>
           )}
 
@@ -157,37 +198,56 @@ export default function AddCameraModal({ lat, lng, onClose, onSave, initialData,
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name</label>
-                <input
-                  type="text"
-                  value={ownerName}
-                  onChange={(e) => setOwnerName(e.target.value)}
-                  placeholder="John Doe"
-                  className="w-full border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Police Reference Number</label>
                 <input
                   type="text"
                   value={policeReferenceNumber}
                   onChange={(e) => setPoliceReferenceNumber(e.target.value)}
-                  placeholder="e.g. CAD 1234"
+                  placeholder="e.g. CAD 1234 (Optional)"
                   className="w-full border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                {scanForPII(policeReferenceNumber) && (
+                  <p className="text-xs text-red-600 mt-1 font-medium">{scanForPII(policeReferenceNumber)}</p>
+                )}
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Camera location Address</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-between">
+                <span>Location Landmark / Junction Address</span>
+                <span className="text-xs text-blue-600 font-semibold">PII Scan Active</span>
+              </label>
               <input
                 type="text"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder="Enter address..."
-                className="w-full border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. Junction of High St & York Rd, outside pharmacy — Do NOT use house numbers"
+                className="w-full border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-sans"
               />
+              {scanForPII(address) ? (
+                <p className="text-xs text-red-600 mt-1 font-semibold">{scanForPII(address)}</p>
+              ) : (
+                <p className="text-xs text-gray-500 mt-1">Provide crossing streets or public landmark names, never exact private residence details or names.</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center justify-between">
+                <span>Public Stream / Viewable Link URL</span>
+                <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">Sussex Public Webcams</span>
+              </label>
+              <input
+                type="text"
+                value={publicOutputUrl}
+                onChange={(e) => setPublicOutputUrl(e.target.value)}
+                placeholder="e.g. https://www.visitbrighton.com/webcam or live feeds"
+                className="w-full border border-gray-300 rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-sans text-sm"
+              />
+              {scanForPII(publicOutputUrl) ? (
+                <p className="text-xs text-red-600 mt-1 font-semibold">{scanForPII(publicOutputUrl)}</p>
+              ) : (
+                <p className="text-xs text-gray-500 mt-1">Provide a URL where users or officers can access this camera's live viewpoint output.</p>
+              )}
             </div>
 
             <div>
@@ -201,7 +261,7 @@ export default function AddCameraModal({ lat, lng, onClose, onSave, initialData,
                   <button
                     type="button"
                     onClick={() => onSetPosition({
-                      type, name, ownerName, policeReferenceNumber, address,
+                      type, name, policeReferenceNumber, address, publicOutputUrl,
                       direction: direction === '' ? undefined : Number(direction),
                       fieldOfView: fieldOfView === '' ? undefined : Number(fieldOfView),
                       viewDistance: viewDistance === '' ? undefined : Number(viewDistance)
@@ -213,7 +273,68 @@ export default function AddCameraModal({ lat, lng, onClose, onSave, initialData,
                   </button>
                 )}
               </div>
-              <p className="text-xs text-gray-500 mt-1">Click "Move Camera" to change the location or drag the red handle to aim it.</p>
+              <p className="text-xs text-gray-500 mt-1 mb-3">Click "Move Camera" to change the location or drag the red handle to aim it.</p>
+            </div>
+
+            <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-3">
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Coverage Cone Adjustments</h4>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-semibold text-gray-700">Direction Angle</label>
+                    <span className="text-xs font-mono text-blue-600 font-bold">{direction !== '' ? `${direction}°` : 'Off'}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="359"
+                    value={direction === '' ? 0 : direction}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setDirection(val);
+                      if (onDirectionChange) onDirectionChange(val);
+                    }}
+                    className="w-full accent-blue-600 cursor-pointer h-1.5 bg-gray-200 rounded-lg appearance-none"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-semibold text-gray-700">Estimated Range</label>
+                    <span className="text-xs font-mono text-blue-600 font-bold">{viewDistance !== '' ? `${viewDistance} meters` : 'Off'}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="5"
+                    max="200"
+                    value={viewDistance === '' ? 30 : viewDistance}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setViewDistance(val);
+                    }}
+                    className="w-full accent-blue-600 cursor-pointer h-1.5 bg-gray-200 rounded-lg appearance-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-semibold text-gray-700">Visual Range Arc (FoV)</label>
+                  <span className="text-xs font-mono text-blue-600 font-bold">{fieldOfView !== '' ? `${fieldOfView}° field of view` : 'Off'}</span>
+                </div>
+                <input
+                  type="range"
+                  min="10"
+                  max="180"
+                  value={fieldOfView === '' ? 90 : fieldOfView}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setFieldOfView(val);
+                  }}
+                  className="w-full accent-blue-600 cursor-pointer h-1.5 bg-gray-200 rounded-lg appearance-none"
+                />
+              </div>
             </div>
 
             {initialData?.createdAt && (

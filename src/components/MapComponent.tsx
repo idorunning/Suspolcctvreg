@@ -282,15 +282,34 @@ export default function MapComponent({ cameras, selectedCamera, onSelectCamera, 
                   <h3 className="font-bold text-lg capitalize">{camera.name || `${camera.type.replace('_', ' ')} Camera`}</h3>
                   {camera.address && <p className="text-sm text-gray-600">{camera.address}</p>}
                   {camera.policeReferenceNumber && <p className="text-sm mt-1">Ref: {camera.policeReferenceNumber}</p>}
+                  
+                  {camera.publicOutputUrl && (
+                    <div className="mt-2 mb-1 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1.5 rounded flex flex-col gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span className="font-semibold">Public Stream Active</span>
+                      </div>
+                      <a
+                        href={camera.publicOutputUrl}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="w-full flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white py-1 px-2 rounded text-[11px] font-semibold transition-colors text-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Launch Output Feed
+                      </a>
+                    </div>
+                  )}
+
                   {onEditCamera && canEditCamera && canEditCamera(camera) && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         onEditCamera(camera);
                       }}
-                      className="mt-3 w-full flex items-center justify-center gap-1 bg-blue-100 text-blue-800 px-3 py-1.5 rounded-md text-sm font-medium border border-blue-200 hover:bg-blue-200 transition-colors"
+                      className="mt-2 w-full flex items-center justify-center gap-1 bg-blue-100 text-blue-800 px-3 py-1.5 rounded-md text-xs font-medium border border-blue-200 hover:bg-blue-200 transition-colors"
                     >
-                      <Edit2 size={14} />
+                      <Edit2 size={12} />
                       Amend Camera
                     </button>
                   )}
