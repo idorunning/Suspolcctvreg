@@ -1,214 +1,305 @@
-import React, { useState, useEffect } from 'react';
-import { Camera, MapPin, Crosshair, Loader2, CheckCircle, ArrowLeft, LogOut } from 'lucide-react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
-import { Camera as CameraType } from '../types';
-import { logEvent } from '../utils/eventLogger';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowLeft, CheckCircle, Crosshair, Cctv, Fuel, HelpCircle, Loader2, Shield, Compass } from 'lucide-react';
+import type { CameraType } from '../types';
+import { createCamera } from '../services/localApi';
 import { scanForPII } from '../utils/privacy';
 
 interface CompanionAppProps {
-  user: any;
-  cameras: CameraType[];
+  initials: string;
   onSwitchMode: () => void;
-  onLogout: () => void;
 }
 
-export default function CompanionApp({ user, cameras, onSwitchMode, onLogout }: CompanionAppProps) {
-  const [location, setLocation] = useState<{lat: number, lng: number} | null>(null);
-  const [locationError, setLocationError] = useState<string | null>(null);
-  const [isLocating, setIsLocating] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
+type Stage = 'locating' | 'form' | 'saving' | 'saved' | 'error';
 
-  const [type, setType] = useState<string>('cctv');
-  const [policeRef, setPoliceRef] = useState('');
-  const [direction, setDirection] = useState<number | ''>('');
+const TYPES: { id: CameraType; label: string; Icon: typeof Cctv; bg: string }[] = [
+  { id: 'cctv', label: 'CCTV', Icon: Cctv, bg: 'bg-orange-500' },
+  { id: 'police_council', label: 'Police / Council', Icon: Shield, bg: 'bg-blue-600' },
+  { id: 'pfs', label: 'Petrol', Icon: Fuel, bg: 'bg-red-600' },
+  { id: 'other', label: 'Other', Icon: HelpCircle, bg: 'bg-slate-500' },
+];
 
-  const getLocation = () => {
-    setIsLocating(true);
-    setLocationError(null);
-    
+interface DeviceOrientationEventWithRequest extends DeviceOrientationEvent {
+  webkitCompassHeading?: number;
+}
+
+export default function CompanionApp({ initials, onSwitchMode }: CompanionAppProps) {
+  const [stage, setStage] = useState<Stage>('locating');
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const [type, setType] = useState<CameraType>('cctv');
+  const [direction, setDirection] = useState<number>(0);
+  const [note, setNote] = useState('');
+  const compassHandlerRef = useRef<((e: DeviceOrientationEvent) => void) | null>(null);
+
+  // Auto-fetch geolocation on mount.
+  useEffect(() => {
     if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported by your browser');
-      setIsLocating(false);
+      setError('This device cannot share its location.');
+      setStage('error');
       return;
     }
+    const id = navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setStage('form');
+      },
+      (err) => {
+        setError(err.code === 1 ? 'Allow location and try again.' : 'We couldn\'t find your location. Try moving outside.');
+        setStage('error');
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+    return () => {
+      if (typeof id === 'number') navigator.geolocation.clearWatch(id);
+    };
+  }, []);
 
+  const retryLocation = () => {
+    setError(null);
+    setStage('locating');
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        });
-        setIsLocating(false);
+      (pos) => {
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setStage('form');
       },
-      (error) => {
-        setLocationError(`Error getting location: ${error.message}`);
-        setIsLocating(false);
+      () => {
+        setError('Still no location. Try outside or near a window.');
+        setStage('error');
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!location) {
-      setLocationError('Please get your current location first');
-      return;
-    }
-
-    // PII Scanner validation
-    const refViolation = scanForPII(policeRef);
-    if (refViolation) {
-      setLocationError(`PII detected in Police Reference: ${refViolation}`);
-      return;
-    }
-
-    setIsSubmitting(true);
+  const useCompass = async () => {
+    type DOE = typeof DeviceOrientationEvent & {
+      requestPermission?: () => Promise<'granted' | 'denied'>;
+    };
+    const Ctor = DeviceOrientationEvent as DOE;
     try {
-      const cameraData: any = {
-        type,
-        latitude: location.lat,
-        longitude: location.lng,
-        addedBy: user.uid,
-        creatorEmail: user.email,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
+      if (typeof Ctor.requestPermission === 'function') {
+        const res = await Ctor.requestPermission();
+        if (res !== 'granted') return;
+      }
+    } catch {
+      return;
+    }
+    if (compassHandlerRef.current) {
+      window.removeEventListener('deviceorientation', compassHandlerRef.current);
+    }
+    const handler = (e: DeviceOrientationEvent) => {
+      const ev = e as DeviceOrientationEventWithRequest;
+      const heading = ev.webkitCompassHeading ?? (typeof ev.alpha === 'number' ? 360 - ev.alpha : null);
+      if (heading != null && !isNaN(heading)) {
+        setDirection(Math.round(heading) % 360);
+      }
+    };
+    compassHandlerRef.current = handler;
+    window.addEventListener('deviceorientation', handler, true);
+    // Auto-detach after a short window so a one-tap reading captures.
+    setTimeout(() => {
+      window.removeEventListener('deviceorientation', handler, true);
+      compassHandlerRef.current = null;
+    }, 2000);
+  };
 
-      if (policeRef.trim()) cameraData.policeReferenceNumber = policeRef.trim();
-      if (direction !== '') cameraData.direction = Number(direction);
-
-      await addDoc(collection(db, 'cameras'), cameraData);
-      
-      await logEvent('camera_added', user.uid, user.email, `Added camera via Companion at ${location.lat.toFixed(6)}&${location.lng.toFixed(6)}`);
-      
-      setSuccess(true);
+  const handleSave = async () => {
+    if (!location) return;
+    const violation = scanForPII(note);
+    if (violation) {
+      setError(`Note: ${violation}`);
+      return;
+    }
+    setStage('saving');
+    setError(null);
+    try {
+      await createCamera(
+        {
+          type,
+          latitude: location.lat,
+          longitude: location.lng,
+          name: note.trim() || null,
+          direction: direction,
+        },
+        initials || null,
+      );
+      setStage('saved');
       setTimeout(() => {
-        setSuccess(false);
+        setStage('locating');
         setLocation(null);
-        setPoliceRef('');
-        setDirection('');
-      }, 3000);
-    } catch (error: any) {
-      setLocationError(`Failed to save camera: ${error.message}`);
-    } finally {
-      setIsSubmitting(false);
+        setNote('');
+        setDirection(0);
+        retryLocation();
+      }, 2200);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save.');
+      setStage('form');
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
-      <header className="bg-blue-700 text-white p-4 shadow-md flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <button onClick={onSwitchMode} className="p-1 hover:bg-blue-600 rounded-full transition-colors">
-            <ArrowLeft size={20} />
-          </button>
-          <h1 className="font-bold text-lg">Quick Add Camera</h1>
-        </div>
-        <button onClick={onLogout} className="p-1 hover:bg-blue-600 rounded-full transition-colors">
-          <LogOut size={20} />
+    <div className="min-h-screen flex flex-col bg-slate-100">
+      <header className="bg-blue-700 text-white p-4 flex items-center justify-between shadow">
+        <button
+          type="button"
+          onClick={onSwitchMode}
+          aria-label="Back to map"
+          className="p-2 hover:bg-blue-800 rounded-lg"
+        >
+          <ArrowLeft size={20} />
         </button>
+        <h1 className="font-bold text-lg">Quick add</h1>
+        <span className="text-xs bg-blue-800 px-2 py-1 rounded" aria-label={`Signed in as ${initials || 'no initials'}`}>
+          {initials || '—'}
+        </span>
       </header>
 
-      <main className="flex-1 p-4 max-w-md mx-auto w-full">
-        {success ? (
-          <div className="bg-green-100 border-2 border-green-500 rounded-xl p-8 text-center flex flex-col items-center justify-center h-64">
-            <CheckCircle size={64} className="text-green-500 mb-4" />
-            <h2 className="text-2xl font-bold text-green-800 mb-2">Camera Saved!</h2>
-            <p className="text-green-600">The camera has been added to the registry.</p>
+      <main className="flex-1 max-w-md mx-auto w-full p-4">
+        {stage === 'locating' && (
+          <div className="bg-white rounded-2xl p-8 shadow flex flex-col items-center gap-4 mt-8">
+            <Loader2 size={48} className="text-blue-600 animate-spin" aria-hidden="true" />
+            <p className="font-medium text-slate-700">Locating you…</p>
           </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 rounded-xl shadow-md">
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Current Location</label>
-              {location ? (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-blue-800">
-                    <MapPin size={18} />
-                    <span className="text-sm font-medium">
-                      {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
-                    </span>
-                  </div>
-                  <button 
-                    type="button" 
-                    onClick={getLocation}
-                    className="text-blue-600 text-sm hover:underline"
+        )}
+
+        {stage === 'error' && (
+          <div className="bg-white rounded-2xl p-6 shadow space-y-3 mt-8">
+            <p className="text-red-700">{error ?? 'Something went wrong.'}</p>
+            <button
+              type="button"
+              onClick={retryLocation}
+              className="w-full bg-blue-700 hover:bg-blue-800 text-white font-semibold py-3 rounded-xl"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
+        {stage === 'saved' && (
+          <div
+            role="status"
+            className="bg-green-50 border-2 border-green-500 rounded-2xl p-8 text-center flex flex-col items-center mt-8"
+          >
+            <CheckCircle size={64} className="text-green-600 mb-3" aria-hidden="true" />
+            <h2 className="text-xl font-bold text-green-800">Camera added</h2>
+            <p className="text-green-700 text-sm mt-1">Getting ready for the next one…</p>
+          </div>
+        )}
+
+        {(stage === 'form' || stage === 'saving') && location && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl p-4 shadow flex items-center gap-2">
+              <Crosshair size={18} className="text-blue-700" aria-hidden="true" />
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Your location</p>
+                <p className="font-mono text-sm text-slate-800">
+                  {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 shadow">
+              <p className="text-sm font-medium text-slate-700 mb-2">What kind of camera?</p>
+              <div className="grid grid-cols-2 gap-2">
+                {TYPES.map(({ id, label, Icon, bg }) => {
+                  const active = type === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setType(id)}
+                      aria-pressed={active}
+                      className={`flex flex-col items-center justify-center gap-1 rounded-xl py-4 border-2 transition-colors font-medium ${
+                        active
+                          ? 'border-blue-700 bg-blue-50 text-blue-900'
+                          : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      <span
+                        className={`${bg} text-white rounded-full p-2 flex items-center justify-center`}
+                        aria-hidden="true"
+                      >
+                        <Icon size={20} />
+                      </span>
+                      <span className="text-sm">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 shadow">
+              <div className="flex items-center justify-between">
+                <label htmlFor="qa-direction" className="text-sm font-medium text-slate-700">
+                  Which way does it point?
+                </label>
+                <span className="text-sm font-mono text-slate-600">{direction}°</span>
+              </div>
+              <input
+                id="qa-direction"
+                type="range"
+                min={0}
+                max={359}
+                value={direction}
+                onChange={(e) => setDirection(Number(e.target.value))}
+                className="w-full mt-2 accent-blue-700"
+              />
+              <div className="mt-3 flex items-center gap-3">
+                <div className="relative w-14 h-14 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center">
+                  <div
+                    style={{ transform: `rotate(${direction}deg)`, transformOrigin: '50% 50%' }}
+                    className="absolute inset-0 flex items-start justify-center pt-1"
+                    aria-hidden="true"
                   >
-                    Update
-                  </button>
+                    <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[16px] border-b-red-600" />
+                  </div>
                 </div>
-              ) : (
                 <button
                   type="button"
-                  onClick={getLocation}
-                  disabled={isLocating}
-                  className="w-full bg-gray-100 hover:bg-gray-200 border border-gray-300 text-gray-800 py-3 rounded-lg flex items-center justify-center gap-2 font-medium transition-colors"
+                  onClick={useCompass}
+                  className="inline-flex items-center gap-2 text-sm bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-lg border border-slate-300 text-slate-700"
                 >
-                  {isLocating ? <Loader2 size={18} className="animate-spin" /> : <Crosshair size={18} />}
-                  Get GPS Location
+                  <Compass size={16} aria-hidden="true" />
+                  Use phone compass
                 </button>
-              )}
-              {locationError && <p className="text-red-500 text-xs mt-1">{locationError}</p>}
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Camera Type</label>
-                <select
-                  value={type}
-                  onChange={(e) => setType(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="cctv">Retail CCTV</option>
-                  <option value="police_council">Police/Council</option>
-                  <option value="pfs">Petrol Station (PFS)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1 flex justify-between">
-                  <span>Police Ref Number (Optional)</span>
-                  <span className="text-xs text-blue-600 font-semibold font-sans">No PII</span>
-                </label>
-                <input
-                  type="text"
-                  value={policeRef}
-                  onChange={(e) => setPoliceRef(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., CAD 1234 — Do not enter PII"
-                />
-                {scanForPII(policeRef) && (
-                  <p className="text-xs text-red-600 mt-1 font-semibold">{scanForPII(policeRef)}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Direction (Optional)</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max="359"
-                    value={direction}
-                    onChange={(e) => setDirection(e.target.value ? Number(e.target.value) : '')}
-                    className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500"
-                    placeholder="0-359 degrees"
-                  />
-                  <span className="text-gray-500 text-sm">°</span>
-                </div>
               </div>
             </div>
+
+            <div className="bg-white rounded-2xl p-4 shadow">
+              <label htmlFor="qa-note" className="block text-sm font-medium text-slate-700 mb-1">
+                Short note (optional)
+              </label>
+              <input
+                id="qa-note"
+                type="text"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="e.g. Bus stop shelter"
+                className="w-full border border-slate-300 rounded-lg py-2.5 px-3 focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-xs text-slate-500">No names or addresses please.</p>
+            </div>
+
+            {error && (
+              <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 p-3 rounded-lg">
+                {error}
+              </p>
+            )}
 
             <button
-              type="submit"
-              disabled={!location || isSubmitting}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-lg mt-8"
+              type="button"
+              onClick={handleSave}
+              disabled={stage === 'saving'}
+              className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-4 rounded-2xl shadow-lg disabled:opacity-60 text-lg flex items-center justify-center gap-2"
             >
-              {isSubmitting ? <Loader2 size={24} className="animate-spin" /> : <Camera size={24} />}
-              Save Camera
+              {stage === 'saving' ? (
+                <Loader2 size={20} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <CheckCircle size={20} aria-hidden="true" />
+              )}
+              Save camera
             </button>
-          </form>
+          </div>
         )}
       </main>
     </div>

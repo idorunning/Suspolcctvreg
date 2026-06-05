@@ -1,65 +1,39 @@
-export type CameraType = 'cctv' | 'police_council' | 'other' | 'pfs';
-export type UserRole = 'admin' | 'user' | 'viewer';
-export type UserStatus = 'pending' | 'approved';
-export type EventAction = 'login' | 'logout' | 'camera_added' | 'camera_amended' | 'camera_removed' | 'user_created' | 'user_removed';
+export type CameraType = 'cctv' | 'police_council' | 'pfs' | 'other';
+
+// ISO-8601 date strings, used in the local JSON file.
+export type Timestamp = string;
 
 export interface Camera {
   id: string;
-  name?: string;
-  address?: string;
   type: CameraType;
-  policeReferenceNumber?: string;
+  name?: string | null;
+  address?: string | null;
+  policeReferenceNumber?: string | null;
+  publicOutputUrl?: string | null;
   latitude: number;
   longitude: number;
-  direction?: number;
-  fieldOfView?: number;
-  viewDistance?: number;
-  addedBy: string;
-  creatorEmail: string;
-  lastVerifiedAt?: any; // Firestore Timestamp
-  createdAt: any; // Firestore Timestamp
-  updatedAt: any; // Firestore Timestamp
+  direction?: number | null;
+  fieldOfView?: number | null;
+  viewDistance?: number | null;
+  addedBy?: string | null; // free-form initials, informational only
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  lastVerifiedAt?: Timestamp | null;
 }
 
-export interface User {
-  id: string;
-  email: string;
-  role: UserRole;
-  status: UserStatus;
-  needsPasswordChange?: boolean;
-  createdAt: any;
+// What a circle/area filter holds when one is active.
+export interface AreaFilter {
+  lat: number;
+  lng: number;
+  radiusM: number;
 }
 
-export interface EventLog {
-  id: string;
-  action: EventAction;
-  userId: string;
-  userEmail: string;
-  details?: string;
-  timestamp: any; // Firestore Timestamp
-}
-
-export interface ArchivedCamera {
-  id: string;
-  originalId: string;
-  originalCamera: {
-    type: CameraType;
-    name?: string;
-    address?: string;
-    policeReferenceNumber?: string;
-    latitude: number;
-    longitude: number;
-    direction?: number;
-    fieldOfView?: number;
-    viewDistance?: number;
-    addedBy: string;
-    creatorEmail: string;
-    lastVerifiedAt?: any;
-    createdAt: any;
-    updatedAt: any;
+// Persisted, encrypted file shape.
+export interface RegistryState {
+  schemaVersion: 1;
+  cameras: Camera[];
+  meta: {
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
   };
-  deletedAt: any;
-  deletedByUid: string;
-  deletedByEmail: string;
-  expiresAt: any;
 }

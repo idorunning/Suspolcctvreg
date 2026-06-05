@@ -2,21 +2,28 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+// Bundle Leaflet's default marker images into the build so there are no
+// external CDN calls.
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { Camera } from '../types';
-import { 
-  Camera as CameraIcon, Video, Shield, HelpCircle, Move, Fuel, ArrowLeftRight, Cctv, Edit2,
-  Layers, Map as MapIcon, Globe, CircleDot, X, Download, Sliders, ChevronDown, ChevronUp, Check
+import {
+  Shield, HelpCircle, Move, Fuel, ArrowLeftRight, Cctv, Edit2,
+  Layers, Map as MapIcon, Globe, CircleDot, Download, Sliders, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { renderToString } from 'react-dom/server';
 import { calculateBearing, calculateDestination, calculateDistance } from '../utils/geo';
-import CoverageGapsLayer from './CoverageGapsLayer';
+import { exportAreaToCSV } from '../utils/storage';
+import { isWithinRadius } from '../utils/geo';
+import PossibleSitesLayer, { type PossibleSite } from './PossibleSitesLayer';
 
-// Fix Leaflet default icon issue
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+// Bundled Leaflet marker assets (no external CDN).
+delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
 });
 
 interface DraftCamera {
@@ -37,15 +44,16 @@ interface MapComponentProps {
   mapCenter?: [number, number] | null;
   draftCamera?: DraftCamera | null;
   onDraftDirectionChange?: (direction: number, distance?: number, fov?: number) => void;
-  showHeatmap?: boolean;
   onEditCamera?: (camera: Camera) => void;
-  canEditCamera?: (camera: Camera) => boolean;
   focusTrigger?: number;
   // Circle Filter props
   circleFilter?: { center: [number, number]; radius: number } | null;
   onCircleFilterChange?: (filter: { center: [number, number]; radius: number } | null) => void;
   isDrawingCircle?: boolean;
   setIsDrawingCircle?: (val: boolean) => void;
+  // Possible sites (OSM Overpass)
+  showPossibleSites?: boolean;
+  onAddFromPossibleSite?: (site: PossibleSite) => void;
 }
 
 const MapEvents = ({ 
@@ -315,23 +323,23 @@ const calculateFovPolygon = (lat: number, lng: number, direction: number, fov: n
   return points;
 };
 
-export default function MapComponent({ 
-  cameras, 
-  selectedCamera, 
-  onSelectCamera, 
-  onMapClick, 
-  isAddingCamera, 
-  mapCenter, 
-  draftCamera, 
-  onDraftDirectionChange, 
-  showHeatmap, 
-  onEditCamera, 
-  canEditCamera, 
+export default function MapComponent({
+  cameras,
+  selectedCamera,
+  onSelectCamera,
+  onMapClick,
+  isAddingCamera,
+  mapCenter,
+  draftCamera,
+  onDraftDirectionChange,
+  onEditCamera,
   focusTrigger,
   circleFilter,
   onCircleFilterChange,
   isDrawingCircle,
-  setIsDrawingCircle
+  setIsDrawingCircle,
+  showPossibleSites,
+  onAddFromPossibleSite,
 }: MapComponentProps) {
   const defaultCenter: [number, number] = [50.936, -0.141]; 
   
@@ -368,44 +376,22 @@ export default function MapComponent({
     });
   }, [cameras, mapFilters, draftCamera, selectedCamera]);
 
+  // Cameras inside the active circle (used for the count and the area export).
+  const inCircleCameras = useMemo(() => {
+    if (!circleFilter) return mapFilteredCameras;
+    const [clat, clng] = circleFilter.center;
+    return mapFilteredCameras.filter((c) =>
+      isWithinRadius(c.latitude, c.longitude, clat, clng, circleFilter.radius),
+    );
+  }, [mapFilteredCameras, circleFilter]);
+
   const handleExportCircleCSV = () => {
-    if (mapFilteredCameras.length === 0) return;
-    
-    const headers = ['ID', 'Type', 'Name', 'Address', 'Police Reference', 'Latitude', 'Longitude', 'Direction', 'Field of View', 'View Distance', 'Creator Email', 'Created At', 'Last Verified At'];
-    
-    const csvRows = [
-      headers.join(','),
-      ...mapFilteredCameras.map(c => {
-        const createdAt = c.createdAt?.toDate ? c.createdAt.toDate().toISOString() : '';
-        const lastVerifiedAt = c.lastVerifiedAt?.toDate ? c.lastVerifiedAt.toDate().toISOString() : '';
-        
-        return [
-          c.id,
-          c.type,
-          `"${(c.name || '').replace(/"/g, '""')}"`,
-          `"${(c.address || '').replace(/"/g, '""')}"`,
-          `"${(c.policeReferenceNumber || '').replace(/"/g, '""')}"`,
-          c.latitude,
-          c.longitude,
-          c.direction !== undefined ? c.direction : '',
-          c.fieldOfView !== undefined ? c.fieldOfView : '',
-          c.viewDistance !== undefined ? c.viewDistance : '',
-          `"${(c.creatorEmail || '').replace(/"/g, '""')}"`,
-          createdAt,
-          lastVerifiedAt
-        ].join(',');
-      })
-    ];
-    
-    const csvContent = csvRows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `circle_cameras_${circleFilter?.radius || 0}m_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    if (!circleFilter || inCircleCameras.length === 0) return;
+    exportAreaToCSV(inCircleCameras, {
+      lat: circleFilter.center[0],
+      lng: circleFilter.center[1],
+      radiusM: circleFilter.radius,
+    });
   };
 
   // Calculate handle position for draft camera
@@ -472,6 +458,9 @@ export default function MapComponent({
         <MapEvents onMapClick={onMapClick} isAddingCamera={isAddingCamera} isDrawingCircle={isDrawingCircle} />
         <ZoomTracker onZoomChange={setMapZoom} />
         <MapFocus selectedCamera={selectedCamera} mapCenter={mapCenter} draftCamera={draftCamera} isAddingCamera={!!isAddingCamera} focusTrigger={focusTrigger} />
+        {showPossibleSites && onAddFromPossibleSite && (
+          <PossibleSitesLayer enabled onAddCamera={onAddFromPossibleSite} />
+        )}
         
         {circleFilter && (
           <Circle
@@ -492,9 +481,9 @@ export default function MapComponent({
           const isSelected = selectedCamera?.id === camera.id;
           return (
             <React.Fragment key={`${camera.id}-${mapZoom}-${isSelected}`}>
-              <Marker 
+              <Marker
                 position={[camera.latitude, camera.longitude]}
-                icon={createCustomIcon(camera.type, camera.direction, false, mapZoom, isSelected)}
+                icon={createCustomIcon(camera.type, camera.direction ?? undefined, false, mapZoom, isSelected)}
                 eventHandlers={{
                   click: () => onSelectCamera(camera)
                 }}
@@ -505,7 +494,7 @@ export default function MapComponent({
                     {camera.address && <p className="text-sm text-gray-600">{camera.address}</p>}
                     {camera.policeReferenceNumber && <p className="text-sm mt-1">Ref: {camera.policeReferenceNumber}</p>}
 
-                    {onEditCamera && canEditCamera && canEditCamera(camera) && (
+                    {onEditCamera && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -514,15 +503,15 @@ export default function MapComponent({
                         className="mt-2 w-full flex items-center justify-center gap-1 bg-blue-100 text-blue-800 px-3 py-1.5 rounded-md text-xs font-medium border border-blue-200 hover:bg-blue-200 transition-colors"
                       >
                         <Edit2 size={12} />
-                        Amend Camera
+                        Edit camera
                       </button>
                     )}
                   </div>
                 </Popup>
               </Marker>
-              
-              {camera.direction !== undefined && !isNaN(camera.direction) && camera.fieldOfView !== undefined && camera.fieldOfView > 0 && (
-                <Polygon 
+
+              {camera.direction != null && camera.fieldOfView != null && camera.fieldOfView > 0 && (
+                <Polygon
                   key={`polygon-${camera.id}-${camera.direction}-${camera.fieldOfView}-${camera.viewDistance}`}
                   positions={calculateFovPolygon(camera.latitude, camera.longitude, camera.direction, camera.fieldOfView, camera.viewDistance || 30)}
                   pathOptions={{ 
@@ -737,7 +726,7 @@ export default function MapComponent({
                         </p>
                       </div>
                       <span className="bg-blue-900/40 text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded-full select-none">
-                        {mapFilteredCameras.length} {mapFilteredCameras.length === 1 ? 'camera' : 'cameras'}
+                        {inCircleCameras.length} {inCircleCameras.length === 1 ? 'camera' : 'cameras'}
                       </span>
                     </div>
 
@@ -768,7 +757,7 @@ export default function MapComponent({
                     <div className="flex gap-1.5 pt-0.5">
                       <button
                         onClick={handleExportCircleCSV}
-                        disabled={mapFilteredCameras.length === 0}
+                        disabled={inCircleCameras.length === 0}
                         className="flex-1 flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30 disabled:hover:bg-emerald-600 text-white font-bold py-1.5 px-2 rounded-lg text-[10px] transition-colors cursor-pointer text-center border-none"
                         title="Export details of cameras inside circle to spreadsheet file"
                         type="button"
