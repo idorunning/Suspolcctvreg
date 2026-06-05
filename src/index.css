@@ -1,5 +1,35 @@
 @import "tailwindcss";
 
+/* Readable, distinctive font stack. Uses operating-system fonts so nothing has
+   to be downloaded — works offline and adds zero size to the bundle. */
+:root {
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Inter", "Helvetica Neue",
+    -apple-system, BlinkMacSystemFont, "Roboto", system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+/* Larger touch targets on small screens. */
+@media (max-width: 640px) {
+  button, [role="button"] {
+    min-height: 40px;
+  }
+}
+
 .cone-glow-selected {
   filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.8));
 }
@@ -36,4 +66,5 @@
   z-index: 1000;
 }
 
-
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

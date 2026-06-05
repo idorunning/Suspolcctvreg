@@ -1,63 +1,51 @@
-import { Camera, UserRole, UserStatus } from '../types';
+import { Camera } from '../types';
 import Papa from 'papaparse';
 
-const STORAGE_KEY = 'sussex_cameras_data';
+const COLUMNS: (keyof Camera)[] = [
+  'id',
+  'type',
+  'name',
+  'address',
+  'policeReferenceNumber',
+  'publicOutputUrl',
+  'latitude',
+  'longitude',
+  'direction',
+  'fieldOfView',
+  'viewDistance',
+  'addedBy',
+  'createdAt',
+  'updatedAt',
+  'lastVerifiedAt',
+];
 
-export const loadCameras = (): Camera[] => {
-  const data = localStorage.getItem(STORAGE_KEY);
-  return data ? JSON.parse(data) : [];
-};
+function dateStamp(): string {
+  return new Date().toISOString().split('T')[0];
+}
 
-export const saveCameras = (cameras: Camera[]) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cameras));
-};
-
-export const exportToCSV = (cameras: Camera[]) => {
-  const csv = Papa.unparse(cameras);
+function download(csv: string, filename: string) {
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
   link.setAttribute('href', url);
-  link.setAttribute('download', `cameras_export_${new Date().toISOString().split('T')[0]}.csv`);
+  link.setAttribute('download', filename);
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+export const exportToCSV = (cameras: Camera[]) => {
+  const csv = Papa.unparse({ fields: COLUMNS as string[], data: cameras });
+  download(csv, `cameras_export_${dateStamp()}.csv`);
 };
 
-export const importFromCSV = (file: File): Promise<Camera[]> => {
-  return new Promise((resolve, reject) => {
-    Papa.parse(file, {
-      header: true,
-      dynamicTyping: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        try {
-          const cameras: Camera[] = results.data.map((row: any) => ({
-            id: row.id || crypto.randomUUID(),
-            type: row.type || 'other',
-            name: row.name || '',
-            latitude: Number(row.latitude),
-            longitude: Number(row.longitude),
-            direction: row.direction !== undefined && row.direction !== null && row.direction !== '' ? Number(row.direction) : undefined,
-            fieldOfView: row.fieldOfView !== undefined && row.fieldOfView !== null && row.fieldOfView !== '' ? Number(row.fieldOfView) : undefined,
-            viewDistance: row.viewDistance !== undefined && row.viewDistance !== null && row.viewDistance !== '' ? Number(row.viewDistance) : undefined,
-            address: row.address || '',
-            policeReferenceNumber: row.policeReferenceNumber || '',
-            addedBy: row.addedBy || 'local_user',
-            creatorEmail: row.creatorEmail || '',
-            createdAt: row.createdAt || new Date().toISOString(),
-            updatedAt: row.updatedAt || new Date().toISOString(),
-            lastVerifiedAt: row.lastVerifiedAt || undefined,
-          }));
-          resolve(cameras);
-        } catch (err) {
-          reject(new Error('Invalid CSV format. Please ensure all required columns are present.'));
-        }
-      },
-      error: (error) => {
-        reject(error);
-      }
-    });
-  });
+export const exportAreaToCSV = (
+  cameras: Camera[],
+  area: { lat: number; lng: number; radiusM: number },
+) => {
+  const csv = Papa.unparse({ fields: COLUMNS as string[], data: cameras });
+  const fname = `cameras_area_${area.lat.toFixed(4)}_${area.lng.toFixed(4)}_${Math.round(area.radiusM)}m_${dateStamp()}.csv`;
+  download(csv, fname);
 };

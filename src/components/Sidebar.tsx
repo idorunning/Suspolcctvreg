@@ -1,6 +1,11 @@
-import React, { useState } from 'react';
-import { Camera, User, UserRole } from '../types';
-import { Search, Plus, MapPin, Filter, Navigation, Loader2, Camera as CameraIcon, Video, Shield, Fuel, HelpCircle, ChevronDown, ChevronRight, Download, Cctv, Play, Car, CircleDot, Trash2, CheckSquare, Square } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import type { Camera, CameraType, AreaFilter } from '../types';
+import {
+  Search, Plus, MapPin, Filter, Loader2, Cctv, Shield, Fuel, HelpCircle,
+  Download, X, ChevronRight,
+} from 'lucide-react';
+import { isWithinRadius } from '../utils/geo';
+import { exportAreaToCSV, exportToCSV } from '../utils/storage';
 
 interface SidebarProps {
   cameras: Camera[];
@@ -8,483 +13,271 @@ interface SidebarProps {
   onAddCameraClick: () => void;
   selectedCameraId?: string;
   onLocationFound?: (lat: number, lng: number) => void;
-  canAdd?: boolean;
-  circleFilter?: { center: [number, number]; radius: number } | null;
-  onClearCircleFilter?: () => void;
-  userRole?: UserRole | null;
-  onBulkDelete?: (cameraIds: string[]) => Promise<void>;
+  area: AreaFilter | null;
+  onClearArea: () => void;
 }
 
-const PoliceCameraIcon = ({ size, className }: { size: number, className?: string }) => (
-  <Shield size={size} className={className} fill="currentColor" />
-);
+const TYPE_LABEL: Record<CameraType, string> = {
+  cctv: 'CCTV',
+  police_council: 'Police / Council',
+  pfs: 'Petrol',
+  other: 'Other',
+};
 
-export default function Sidebar({ 
-  cameras, 
-  onSelectCamera, 
-  onAddCameraClick, 
-  selectedCameraId, 
-  onLocationFound, 
-  canAdd = true,
-  circleFilter,
-  onClearCircleFilter,
-  userRole,
-  onBulkDelete
+const TYPE_BG: Record<CameraType, string> = {
+  cctv: 'bg-orange-500',
+  police_council: 'bg-blue-600',
+  pfs: 'bg-red-600',
+  other: 'bg-slate-500',
+};
+
+function typeIcon(t: CameraType) {
+  switch (t) {
+    case 'cctv':
+      return <Cctv size={14} className="text-white" />;
+    case 'police_council':
+      return <Shield size={14} className="text-white" fill="currentColor" />;
+    case 'pfs':
+      return <Fuel size={14} className="text-white" />;
+    default:
+      return <HelpCircle size={14} className="text-white" />;
+  }
+}
+
+function formatRadius(m: number): string {
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${m} m`;
+}
+
+export default function Sidebar({
+  cameras,
+  onSelectCamera,
+  onAddCameraClick,
+  selectedCameraId,
+  onLocationFound,
+  area,
+  onClearArea,
 }: SidebarProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<string>('all');
-  
+  const [filterType, setFilterType] = useState<'all' | CameraType>('all');
   const [locationSearch, setLocationSearch] = useState('');
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
   const [locationError, setLocationError] = useState('');
 
-  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
-  const [isPrimaryMenuOpen, setIsPrimaryMenuOpen] = useState(true);
-  const [isCameraListOpen, setIsCameraListOpen] = useState(true);
+  const filtered = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return cameras.filter((c) => {
+      if (filterType !== 'all' && c.type !== filterType) return false;
+      if (
+        area &&
+        !isWithinRadius(c.latitude, c.longitude, area.lat, area.lng, area.radiusM)
+      )
+        return false;
+      if (term) {
+        const hay = [c.name, c.address, c.policeReferenceNumber, c.addedBy]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!hay.includes(term)) return false;
+      }
+      return true;
+    });
+  }, [cameras, filterType, searchTerm, area]);
 
-  // States for bulk deletion
-  const [isBulkMode, setIsBulkMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const filterTypes = [
-    { id: 'all', label: 'All Types', icon: <Filter size={16} className="text-gray-500" /> },
-    { id: 'cctv', label: 'Retail CCTV', icon: <Cctv size={16} className="text-orange-500" /> },
-    { id: 'police_council', label: 'Police/Council', icon: <PoliceCameraIcon size={16} className="text-blue-600" /> },
-    { id: 'pfs', label: 'Petrol Filling Station (PFS)', icon: <Fuel size={16} className="text-orange-600" /> },
-    { id: 'other', label: 'Other', icon: <HelpCircle size={16} className="text-gray-600" /> },
-  ];
-
-  const handleSelectAll = () => {
-    const visibleIds = filteredCameras.map(c => c.id);
-    const allSelected = visibleIds.every(id => selectedIds.includes(id));
-    if (allSelected) {
-      setSelectedIds(prev => prev.filter(id => !visibleIds.includes(id)));
-    } else {
-      setSelectedIds(prev => Array.from(new Set([...prev, ...visibleIds])));
-    }
-  };
-
-  const handlePerformBulkDelete = async () => {
-    if (selectedIds.length === 0 || !onBulkDelete) return;
-    if (!window.confirm(`Are you sure you want to delete these ${selectedIds.length} cameras? They will be removed fully from the active registry and safely held in the archive for 30 days.`)) return;
-    
-    setIsDeleting(true);
-    try {
-      await onBulkDelete(selectedIds);
-      setSelectedIds([]);
-      setIsBulkMode(false);
-    } catch (err) {
-      console.error("Bulk delete failed:", err);
-      alert("Failed to delete cameras. Insufficient permissions.");
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const selectedFilterObj = filterTypes.find(t => t.id === filterType) || filterTypes[0];
-
-  const filteredCameras = cameras.filter(camera => {
-    const matchesSearch = 
-      camera.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      camera.address?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      camera.policeReferenceNumber?.toLowerCase().includes(searchTerm.toLowerCase());
-      
-    const matchesType = filterType === 'all' || camera.type === filterType;
-    
-    return matchesSearch && matchesType;
-  });
-
-  const handleLocationSearch = async (e: React.FormEvent) => {
+  const handleSearchLocation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!locationSearch.trim() || !onLocationFound) return;
-    
+    const q = locationSearch.trim();
+    if (!q) return;
     setIsSearchingLocation(true);
     setLocationError('');
-    
     try {
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationSearch)}&countrycodes=gb&limit=1`);
-      const data = await response.json();
-      
-      if (data && data.length > 0) {
-        const { lat, lon } = data[0];
-        onLocationFound(parseFloat(lat), parseFloat(lon));
-      } else {
-        setLocationError('Location not found');
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
+      const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+      if (!res.ok) throw new Error('Search failed.');
+      const data = (await res.json()) as { lat: string; lon: string }[];
+      if (!data.length) {
+        setLocationError('Nothing found. Try a different search.');
+        return;
       }
-    } catch (err) {
-      setLocationError('Error searching location');
+      onLocationFound?.(parseFloat(data[0].lat), parseFloat(data[0].lon));
+    } catch {
+      setLocationError('Search failed. Check your connection.');
     } finally {
       setIsSearchingLocation(false);
     }
   };
 
-  const handleExportData = () => {
-    if (cameras.length === 0) return;
-    
-    const headers = ['ID', 'Type', 'Name', 'Address', 'Police Reference', 'Latitude', 'Longitude', 'Direction', 'Field of View', 'View Distance', 'Added By', 'Creator Email', 'Created At', 'Last Verified At'];
-    
-    const csvRows = [
-      headers.join(','),
-      ...cameras.map(c => {
-        const createdAt = c.createdAt?.toDate ? c.createdAt.toDate().toISOString() : '';
-        const lastVerifiedAt = c.lastVerifiedAt?.toDate ? c.lastVerifiedAt.toDate().toISOString() : '';
-        
-        return [
-          c.id,
-          c.type,
-          `"${(c.name || '').replace(/"/g, '""')}"`,
-          `"${(c.address || '').replace(/"/g, '""')}"`,
-          `"${(c.policeReferenceNumber || '').replace(/"/g, '""')}"`,
-          c.latitude,
-          c.longitude,
-          c.direction !== undefined ? c.direction : '',
-          c.fieldOfView !== undefined ? c.fieldOfView : '',
-          c.viewDistance !== undefined ? c.viewDistance : '',
-          c.addedBy,
-          c.creatorEmail,
-          createdAt,
-          lastVerifiedAt
-        ].join(',');
-      })
-    ];
-    
-    const csvContent = csvRows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `sussex_cameras_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleExportAll = () => exportToCSV(cameras);
+  const handleExportArea = () => {
+    if (area) exportAreaToCSV(filtered, area);
   };
 
   return (
-    <div className="w-80 h-full bg-white border-r border-gray-200 flex flex-col shadow-xl z-10 relative">
-      {/* Sidebar Header */}
-      <div className="p-4 border-b border-gray-200 bg-blue-900 text-white flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <MapPin size={24} className="text-blue-300" />
-          <div>
-            <h1 className="text-lg font-bold tracking-tight">Sussex Camera Registry</h1>
-            <p className="text-xs text-blue-200">Authorized Police Registry</p>
-          </div>
-        </div>
-      </div>
+    <aside className="w-80 bg-white border-r border-slate-200 h-full flex flex-col">
+      <div className="p-4 space-y-3 border-b border-slate-100">
+        <button
+          type="button"
+          onClick={onAddCameraClick}
+          className="w-full bg-blue-700 hover:bg-blue-800 text-white font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2"
+        >
+          <Plus size={16} aria-hidden="true" />
+          Add a camera
+        </button>
 
-      {/* Primary Menu Toggle */}
-      <div 
-        className="px-4 py-3 border-b border-gray-200 flex items-center justify-between cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors flex-shrink-0"
-        onClick={() => setIsPrimaryMenuOpen(!isPrimaryMenuOpen)}
-      >
-        <h2 className="text-xs font-bold text-gray-550 text-gray-500 uppercase tracking-wider flex items-center gap-2">
-          <Filter size={14} />
-          Location & Filters
-        </h2>
-        {isPrimaryMenuOpen ? (
-          <ChevronDown size={16} className="text-gray-400" />
-        ) : (
-          <ChevronRight size={16} className="text-gray-400" />
-        )}
-      </div>
-
-      {isPrimaryMenuOpen && (
-        <div className="p-4 border-b border-gray-200 bg-white space-y-4 flex-shrink-0">
-          <form onSubmit={handleLocationSearch} className="space-y-1">
-            <label className="text-xs font-medium text-gray-700">Jump to Location</label>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Navigation className="absolute left-3 top-2.5 text-gray-400" size={14} />
-                <input
-                  type="text"
-                  placeholder="Postcode, town, street..."
-                  className="w-full pl-9 pr-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={locationSearch}
-                  onChange={(e) => setLocationSearch(e.target.value)}
-                />
-              </div>
-              <button 
-                type="submit" 
-                disabled={isSearchingLocation || !locationSearch.trim()}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center min-w-[40px]"
-              >
-                {isSearchingLocation ? <Loader2 size={16} className="animate-spin" /> : 'Go'}
-              </button>
-            </div>
-            {locationError && <p className="text-xs text-red-650 font-medium pl-1">⚠️ {locationError}</p>}
-          </form>
-
-          <div className="pt-3 border-t border-gray-100 space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+        <form onSubmit={handleSearchLocation} className="space-y-2">
+          <label htmlFor="loc-search" className="sr-only">
+            Search for a place
+          </label>
+          <div className="flex gap-1.5">
+            <div className="relative flex-1">
+              <MapPin
+                size={14}
+                className="absolute left-2.5 top-2.5 text-slate-400"
+                aria-hidden="true"
+              />
               <input
+                id="loc-search"
                 type="text"
-                placeholder="Search coordinates, names, refs, link..."
-                className="w-full pl-9 pr-4 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={locationSearch}
+                onChange={(e) => setLocationSearch(e.target.value)}
+                placeholder="Find a place (e.g. Brighton)"
+                className="w-full border border-slate-300 rounded-lg py-1.5 pl-8 pr-2 text-sm focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            
-            <div className="relative">
-              <div 
-                className="w-full border border-gray-300 rounded-md py-1.5 px-3 text-sm bg-white cursor-pointer flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-blue-500"
-                onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-              >
-                <div className="flex items-center gap-2">
-                  {selectedFilterObj.icon}
-                  <span>{selectedFilterObj.label}</span>
-                </div>
-                <ChevronDown size={16} className="text-gray-500" />
-              </div>
-              
-              {isFilterDropdownOpen && (
-                <div className="absolute top-full left-0 z-20 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg">
-                  {filterTypes.map((type) => (
-                    <div
-                      key={type.id}
-                      className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
-                      onClick={() => {
-                        setFilterType(type.id);
-                        setIsFilterDropdownOpen(false);
-                      }}
-                    >
-                      {type.icon}
-                      <span>{type.label}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {circleFilter && (
-        <div className="mx-4 mt-3 p-2.5 bg-blue-55 bg-blue-50 border border-blue-200 rounded-lg text-xs space-y-1 flex-shrink-0 shadow-sm">
-          <div className="flex items-center justify-between text-blue-800 font-bold">
-            <span className="flex items-center gap-1">
-              <CircleDot size={12} className="text-blue-600 animate-pulse" />
-              Circle Area Filter
-            </span>
             <button
-              onClick={onClearCircleFilter}
-              className="text-[10px] text-blue-600 hover:text-blue-800 underline cursor-pointer font-bold"
-              style={{ background: 'none', border: 'none', padding: 0 }}
-              type="button"
+              type="submit"
+              disabled={isSearchingLocation}
+              className="px-3 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-sm font-medium disabled:opacity-60"
             >
-              Clear
+              {isSearchingLocation ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                'Go'
+              )}
             </button>
           </div>
-          <p className="text-gray-600 leading-relaxed font-medium">
-            Listing only the <span className="text-blue-700 font-bold">{cameras.length}</span> cameras within <span className="font-bold text-blue-900">{circleFilter.radius}m</span> of drawn area.
-          </p>
-        </div>
-      )}
-
-      {/* Camera List Toggle */}
-      <div 
-        className="px-4 py-3 border-b border-gray-200 flex items-center justify-between cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors flex-shrink-0"
-        onClick={() => setIsCameraListOpen(!isCameraListOpen)}
-      >
-        <h2 className="text-xs font-bold text-gray-555 text-gray-500 uppercase tracking-wider flex items-center gap-2">
-          <CameraIcon size={14} />
-          Cameras ({filteredCameras.length})
-        </h2>
-        {isCameraListOpen ? (
-          <ChevronDown size={16} className="text-gray-400" />
-        ) : (
-          <ChevronRight size={16} className="text-gray-400" />
-        )}
+          {locationError && <p className="text-xs text-red-700">{locationError}</p>}
+        </form>
       </div>
 
-      {isCameraListOpen && (userRole === 'admin' || userRole === 'user') && (
-        <div className="bg-slate-50 border-b border-gray-200 px-4 py-2 flex items-center justify-between text-xs flex-shrink-0 font-semibold text-slate-600">
-          {!isBulkMode ? (
-            <>
-              <span className="text-gray-500">Registry Operations:</span>
-              <button
-                onClick={() => {
-                  setIsBulkMode(true);
-                  setSelectedIds([]);
-                }}
-                className="text-red-650 hover:text-red-700 font-bold flex items-center gap-1 cursor-pointer"
-                type="button"
-              >
-                <Trash2 size={13} />
-                Bulk Delete
-              </button>
-            </>
-          ) : (
-            <div className="flex items-center justify-between w-full">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleSelectAll}
-                  className="text-blue-600 hover:text-blue-800 font-bold cursor-pointer"
-                  type="button"
-                >
-                  {filteredCameras.map(c => c.id).every(id => selectedIds.includes(id)) ? 'Deselect All' : 'Select All'}
-                </button>
-                <span className="text-gray-400 font-normal">|</span>
-                <span className="text-gray-700 font-bold">{selectedIds.length} Selected</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handlePerformBulkDelete}
-                  disabled={selectedIds.length === 0 || isDeleting}
-                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-2 py-1 rounded disabled:opacity-50 flex items-center gap-1 cursor-pointer shadow-sm text-[10px]"
-                  type="button"
-                >
-                  {isDeleting ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-                  Delete ({selectedIds.length})
-                </button>
-                <button
-                  onClick={() => {
-                    setIsBulkMode(false);
-                    setSelectedIds([]);
-                  }}
-                  className="text-gray-500 hover:text-gray-700 font-bold cursor-pointer"
-                  type="button"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
+      {area && (
+        <div className="bg-blue-50 border-b border-blue-100 px-4 py-3 text-sm space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="font-medium text-blue-900">
+              In the chosen area ({formatRadius(area.radiusM)})
+            </p>
+            <button
+              type="button"
+              onClick={onClearArea}
+              aria-label="Clear area filter"
+              className="text-blue-800 hover:bg-blue-100 p-1 rounded"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <p className="text-blue-800 text-xs">
+            {filtered.length} {filtered.length === 1 ? 'camera' : 'cameras'} found
+          </p>
+          <button
+            type="button"
+            onClick={handleExportArea}
+            disabled={filtered.length === 0}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-semibold py-2 rounded-lg flex items-center justify-center gap-1"
+          >
+            <Download size={14} aria-hidden="true" />
+            Export this area (CSV)
+          </button>
         </div>
       )}
 
-      {isCameraListOpen && (
-        <div className="flex-1 overflow-y-auto p-3 bg-gray-50 space-y-2">
-          {filteredCameras.length === 0 ? (
-            <div className="text-center py-8 text-gray-500 text-sm">No cameras found matching search.</div>
-          ) : (
-            <div className="space-y-2">
-              {filteredCameras.map((camera) => {
-                const isSelected = selectedCameraId === camera.id;
-                const isSelectedForBulk = selectedIds.includes(camera.id);
-                
-                const handleCardClick = () => {
-                  if (isBulkMode) {
-                    if (isSelectedForBulk) {
-                      setSelectedIds(prev => prev.filter(id => id !== camera.id));
-                    } else {
-                      setSelectedIds(prev => [...prev, camera.id]);
-                    }
-                  } else {
-                    onSelectCamera(camera);
-                  }
-                };
+      <div className="px-4 pt-3 pb-2 flex gap-2">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" aria-hidden="true" />
+          <label htmlFor="cam-search" className="sr-only">
+            Search cameras
+          </label>
+          <input
+            id="cam-search"
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search cameras"
+            className="w-full border border-slate-300 rounded-lg py-1.5 pl-8 pr-2 text-sm focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div className="relative">
+          <Filter size={14} className="absolute left-2.5 top-2.5 text-slate-400" aria-hidden="true" />
+          <label htmlFor="cam-type-filter" className="sr-only">
+            Camera type
+          </label>
+          <select
+            id="cam-type-filter"
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value as 'all' | CameraType)}
+            className="border border-slate-300 rounded-lg py-1.5 pl-8 pr-2 text-sm bg-white focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All types</option>
+            <option value="cctv">CCTV</option>
+            <option value="police_council">Police / Council</option>
+            <option value="pfs">Petrol</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
 
-                return (
-                  <div
-                    key={camera.id}
-                    onClick={handleCardClick}
-                    className={`rounded-lg cursor-pointer border p-3 transition-colors text-left ${
-                      isBulkMode
-                        ? (isSelectedForBulk ? 'border-red-500 bg-red-50/50' : 'border-gray-200 bg-white hover:bg-gray-50')
-                        : (isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50')
+      <div className="flex-1 overflow-y-auto px-2 pb-2">
+        {filtered.length === 0 ? (
+          <p className="text-sm text-slate-500 px-3 py-6 text-center">
+            No cameras match.
+          </p>
+        ) : (
+          <ul className="space-y-1">
+            {filtered.map((c) => {
+              const selected = selectedCameraId === c.id;
+              return (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectCamera(c)}
+                    aria-current={selected ? 'true' : undefined}
+                    className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 border ${
+                      selected
+                        ? 'bg-blue-50 border-blue-300'
+                        : 'border-transparent hover:bg-slate-50'
                     }`}
                   >
-                    <div className="flex items-start gap-3">
-                      {isBulkMode && (
-                        <div className="flex-shrink-0 mt-1">
-                          {isSelectedForBulk ? (
-                            <CheckSquare className="text-red-650" size={17} />
-                          ) : (
-                            <Square className="text-gray-400" size={17} />
-                          )}
-                        </div>
-                      )}
-                      
-                      <div className="min-w-0 flex-1">
-                        <div className="flex justify-between items-start gap-2">
-                          <div className="min-w-0 flex-1">
-                            <h3 className="text-sm font-bold text-gray-900 truncate">
-                              {camera.name || camera.type.replace('_', ' ')}
-                            </h3>
-                            {camera.address && (
-                              <p className="text-xs text-gray-500 truncate mt-0.5">{camera.address}</p>
-                            )}
-                          </div>
-                          <div className={`text-[10px] uppercase font-semibold px-2 py-0.5 rounded ${
-                            camera.type === 'cctv' ? 'bg-orange-100 text-orange-850' :
-                            camera.type === 'police_council' ? 'bg-blue-100 text-blue-800' :
-                            camera.type === 'pfs' ? 'bg-yellow-105 bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {camera.type === 'pfs' ? 'PFS' : camera.type.replace('_', ' ')}
-                          </div>
-                        </div>
-                        
-                        {isSelected && !isBulkMode && (
-                          <div className="mt-4 pt-3 border-t border-gray-200 text-xs space-y-2">
-                            <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600">
-                              <div>
-                                <span className="block text-gray-400">Type</span>
-                                <span className="font-semibold text-gray-800 capitalize">
-                                  {camera.type.replace('_', ' ')}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="block text-gray-400">Direction</span>
-                                <span className="font-semibold text-gray-800">
-                                  {camera.direction !== undefined ? `${camera.direction}°` : 'Omnidirectional'}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="bg-gray-100 p-2 rounded text-[10px] text-gray-600 space-y-1">
-                              <p><span className="text-gray-400">Coords:</span> {camera.latitude.toFixed(5)}, {camera.longitude.toFixed(5)}</p>
-                              <p><span className="text-gray-400">Added:</span> {camera.createdAt?.toDate ? camera.createdAt.toDate().toLocaleDateString() : 'N/A'}</p>
-                              <p><span className="text-gray-400">Verified:</span> {camera.lastVerifiedAt?.toDate ? camera.lastVerifiedAt.toDate().toLocaleDateString() : 'Never'}</p>
-                            </div>
-
-                            <div className="pt-2 border-t border-gray-200">
-                              <div className="bg-blue-50 p-2 rounded">
-                                <p className="text-[10px] text-blue-800 font-semibold mb-0.5">Reference & Legality</p>
-                                {camera.policeReferenceNumber ? (
-                                  <p className="text-gray-600 font-mono text-[10px]">
-                                    REF: {camera.policeReferenceNumber}
-                                  </p>
-                                ) : (
-                                  <p className="text-gray-400 italic text-[10px]">No reference recorded.</p>
-                                )}
-                                <p className="text-[9px] text-blue-500 font-medium mt-1">This is a public/retail camera. No private flat/house numbers recorded.</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Sidebar Utilities Footer */}
-      <div className="p-4 border-t border-gray-200 bg-white mt-auto flex-shrink-0 space-y-2">
-        {canAdd && (
-          <button
-            onClick={onAddCameraClick}
-            className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md font-semibold text-sm transition-colors"
-          >
-            <Plus size={18} />
-            Add Camera
-          </button>
+                    <span
+                      className={`${TYPE_BG[c.type]} text-white rounded-full p-1.5 flex items-center justify-center flex-shrink-0`}
+                      aria-hidden="true"
+                    >
+                      {typeIcon(c.type)}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="font-medium text-slate-900 truncate block text-sm">
+                        {c.name || TYPE_LABEL[c.type]}
+                      </span>
+                      <span className="text-xs text-slate-500 truncate block">
+                        {c.address || `${c.latitude.toFixed(5)}, ${c.longitude.toFixed(5)}`}
+                      </span>
+                    </span>
+                    <ChevronRight size={14} className="text-slate-400" aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         )}
+      </div>
+
+      <div className="border-t border-slate-100 p-3">
         <button
-          onClick={handleExportData}
-          className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 py-1.5 rounded-md text-xs transition-colors"
+          type="button"
+          onClick={handleExportAll}
+          className="w-full text-sm bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 font-medium py-2 rounded-lg flex items-center justify-center gap-1.5"
         >
-          <Download size={14} />
-          Export to CSV
+          <Download size={14} aria-hidden="true" />
+          Export all ({cameras.length})
         </button>
       </div>
-    </div>
+    </aside>
   );
 }

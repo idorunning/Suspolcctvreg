@@ -46,3 +46,13 @@ export function calculateDestination(lat: number, lng: number, bearing: number, 
 
   return [toDeg(lat2), toDeg(lng2)];
 }
+
+export function isWithinRadius(
+  lat: number,
+  lng: number,
+  centreLat: number,
+  centreLng: number,
+  radiusMeters: number,
+): boolean {
+  return calculateDistance(lat, lng, centreLat, centreLng) <= radiusMeters;
+}
