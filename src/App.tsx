@@ -12,6 +12,7 @@ import ChangePassword from './components/ChangePassword';
 import CompanionApp from './components/CompanionApp';
 import { Shield, LogOut, Loader2, Crosshair, Users, Edit2, Clock, Trash2, CheckCircle, PanelLeftClose, PanelLeftOpen, BarChart3, Map as MapIcon, Layers, Smartphone, Video } from 'lucide-react';
 import { logEvent } from './utils/eventLogger';
+import { calculateDistance } from './utils/geo';
 
 enum OperationType {
   CREATE = 'create',
@@ -81,6 +82,19 @@ export default function App() {
   const [usersCount, setUsersCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [focusTrigger, setFocusTrigger] = useState(0);
+
+  const [circleFilter, setCircleFilter] = useState<{ center: [number, number]; radius: number } | null>(null);
+  const [isDrawingCircle, setIsDrawingCircle] = useState(false);
+
+  const filteredCameras = React.useMemo(() => {
+    return cameras.filter(camera => {
+      if (circleFilter) {
+        const dist = calculateDistance(circleFilter.center[0], circleFilter.center[1], camera.latitude, camera.longitude);
+        return dist <= circleFilter.radius;
+      }
+      return true;
+    });
+  }, [cameras, circleFilter]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -230,7 +244,7 @@ export default function App() {
 
         // Ensure optional fields are not undefined (Firestore throws on undefined)
         // If they are undefined, we use deleteField() to remove them
-        const optionalFields = ['direction', 'fieldOfView', 'viewDistance', 'policeReferenceNumber', 'publicOutputUrl', 'name', 'address'] as const;
+        const optionalFields = ['direction', 'fieldOfView', 'viewDistance', 'policeReferenceNumber', 'name', 'address'] as const;
         optionalFields.forEach(field => {
           if (updatePayload[field] === undefined) {
             updatePayload[field] = deleteField();
@@ -260,7 +274,7 @@ export default function App() {
           updatedAt: serverTimestamp()
         };
 
-        const optionalFields = ['direction', 'fieldOfView', 'viewDistance', 'policeReferenceNumber', 'publicOutputUrl', 'name', 'address'] as const;
+        const optionalFields = ['direction', 'fieldOfView', 'viewDistance', 'policeReferenceNumber', 'name', 'address'] as const;
         optionalFields.forEach(field => {
           if (createPayload[field] === undefined) {
             delete createPayload[field];
@@ -284,18 +298,75 @@ export default function App() {
 
   const handleDeleteCamera = async () => {
     if (!user || !selectedCamera) return;
-    if (!window.confirm('Are you sure you want to delete this camera? This action cannot be undone.')) return;
+    if (!window.confirm('Are you sure you want to delete this camera? It will be removed fully from the active database registry and safely held in the archive for 30 days.')) return;
     
     try {
+      const { id, ...originalCamera } = selectedCamera;
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30);
+
+      // 1. Write backup archive
+      await setDoc(doc(db, 'archived_cameras', selectedCamera.id), {
+        originalId: selectedCamera.id,
+        originalCamera,
+        deletedAt: serverTimestamp(),
+        deletedByUid: user.uid,
+        deletedByEmail: user.email || '',
+        expiresAt
+      });
+
+      // 2. Remove fully from live camera database
       await deleteDoc(doc(db, 'cameras', selectedCamera.id));
+
       const lat = selectedCamera.latitude;
       const lng = selectedCamera.longitude;
       const cameraName = selectedCamera.name || `${selectedCamera.type}/${lat.toFixed(6)}&${lng.toFixed(6)}`;
-      await logEvent('camera_removed', user.uid, user.email || '', `Deleted camera ${cameraName}`);
+      await logEvent('camera_removed', user.uid, user.email || '', `Deleted camera ${cameraName}. Moved to recover archive.`);
       setSelectedCamera(null);
       setIsEditingCamera(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, 'cameras');
+    }
+  };
+
+  const handleBulkDelete = async (cameraIds: string[]) => {
+    if (!user || cameraIds.length === 0) return;
+    try {
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30);
+
+      for (const camId of cameraIds) {
+        const camToArchive = cameras.find(c => c.id === camId);
+        if (camToArchive) {
+          const { id, ...originalCamera } = camToArchive;
+          
+          // 1. Write backup archive
+          await setDoc(doc(db, 'archived_cameras', camId), {
+            originalId: camId,
+            originalCamera,
+            deletedAt: serverTimestamp(),
+            deletedByUid: user.uid,
+            deletedByEmail: user.email || '',
+            expiresAt
+          });
+
+          // 2. Remove fully from live camera database
+          await deleteDoc(doc(db, 'cameras', camId));
+        }
+      }
+
+      await logEvent(
+        'camera_removed',
+        user.uid,
+        user.email || '',
+        `Bulk deleted ${cameraIds.length} cameras. Items added to recovery archive.`
+      );
+
+      setSelectedCamera(null);
+      setIsEditingCamera(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'cameras');
+      throw error;
     }
   };
 
@@ -431,7 +502,7 @@ export default function App() {
       
       <div className={`absolute md:relative z-20 h-full transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 md:w-0 md:overflow-hidden'}`}>
         <Sidebar 
-          cameras={cameras} 
+          cameras={filteredCameras} 
           onSelectCamera={(cam) => {
             setSelectedCamera(cam);
             setFocusTrigger(prev => prev + 1);
@@ -452,6 +523,10 @@ export default function App() {
             if (window.innerWidth < 768) setIsSidebarOpen(false);
           }}
           canAdd={canAdd}
+          circleFilter={circleFilter}
+          onClearCircleFilter={() => setCircleFilter(null)}
+          userRole={userRole}
+          onBulkDelete={handleBulkDelete}
         />
       </div>
       
@@ -530,17 +605,7 @@ export default function App() {
               <span className="hidden sm:inline">Overview</span>
             </button>
             
-            <div className="flex items-center gap-2 ml-2 border-l border-gray-200 pl-2 sm:pl-4">
-              <button
-                onClick={() => setShowHeatmap(!showHeatmap)}
-                className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border transition-colors whitespace-nowrap ${showHeatmap ? 'bg-orange-100 text-orange-800 border-orange-200' : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'}`}
-                title="Toggle Heatmap"
-                type="button"
-              >
-                <MapIcon size={16} />
-                <span>Heatmap</span>
-              </button>
-            </div>
+            {/* Controls segment */}
           </div>
           
           <div className="flex items-center gap-2 sm:gap-4 ml-2 flex-shrink-0">
@@ -570,7 +635,7 @@ export default function App() {
 
         <main className="flex-1 relative">
           <MapComponent 
-            cameras={cameras}
+            cameras={filteredCameras}
             selectedCamera={selectedCamera}
             onSelectCamera={(cam) => {
               setSelectedCamera(cam);
@@ -588,7 +653,10 @@ export default function App() {
             }}
             canEditCamera={(camera) => userRole === 'admin' || userRole === 'user'}
             onMapClick={(lat, lng) => {
-              if (isAddingCamera || isSettingPosition) {
+              if (isDrawingCircle) {
+                setCircleFilter({ center: [lat, lng], radius: 500 });
+                setIsDrawingCircle(false);
+              } else if (isAddingCamera || isSettingPosition) {
                 setNewCameraLocation({ lat, lng });
                 if (draftDirection === undefined) {
                   setDraftDirection(0);
@@ -610,6 +678,10 @@ export default function App() {
                 setDraftCameraData(prev => prev ? { ...prev, fieldOfView: fov } : null);
               }
             }}
+            circleFilter={circleFilter}
+            onCircleFilterChange={setCircleFilter}
+            isDrawingCircle={isDrawingCircle}
+            setIsDrawingCircle={setIsDrawingCircle}
           />
           
           {isSettingPosition && (

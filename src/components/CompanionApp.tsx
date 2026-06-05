@@ -22,7 +22,6 @@ export default function CompanionApp({ user, cameras, onSwitchMode, onLogout }: 
 
   const [type, setType] = useState<string>('cctv');
   const [policeRef, setPoliceRef] = useState('');
-  const [publicOutputUrl, setPublicOutputUrl] = useState('');
   const [direction, setDirection] = useState<number | ''>('');
 
   const getLocation = () => {
@@ -65,12 +64,6 @@ export default function CompanionApp({ user, cameras, onSwitchMode, onLogout }: 
       return;
     }
 
-    const urlViolation = scanForPII(publicOutputUrl);
-    if (urlViolation) {
-      setLocationError(`PII detected in Public Output URL: ${urlViolation}`);
-      return;
-    }
-
     setIsSubmitting(true);
     try {
       const cameraData: any = {
@@ -84,7 +77,6 @@ export default function CompanionApp({ user, cameras, onSwitchMode, onLogout }: 
       };
 
       if (policeRef.trim()) cameraData.policeReferenceNumber = policeRef.trim();
-      if (publicOutputUrl.trim()) cameraData.publicOutputUrl = publicOutputUrl.trim();
       if (direction !== '') cameraData.direction = Number(direction);
 
       await addDoc(collection(db, 'cameras'), cameraData);
@@ -96,7 +88,6 @@ export default function CompanionApp({ user, cameras, onSwitchMode, onLogout }: 
         setSuccess(false);
         setLocation(null);
         setPoliceRef('');
-        setPublicOutputUrl('');
         setDirection('');
       }, 3000);
     } catch (error: any) {
@@ -189,23 +180,6 @@ export default function CompanionApp({ user, cameras, onSwitchMode, onLogout }: 
                 />
                 {scanForPII(policeRef) && (
                   <p className="text-xs text-red-600 mt-1 font-semibold">{scanForPII(policeRef)}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1 flex justify-between">
-                  <span>Public Output URL (Optional)</span>
-                  <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-1.5 rounded">Sussex Public Cam</span>
-                </label>
-                <input
-                  type="text"
-                  value={publicOutputUrl}
-                  onChange={(e) => setPublicOutputUrl(e.target.value)}
-                  className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 text-sm"
-                  placeholder="e.g. https://www.visitbrighton.com/webcam"
-                />
-                {scanForPII(publicOutputUrl) && (
-                  <p className="text-xs text-red-600 mt-1 font-semibold">{scanForPII(publicOutputUrl)}</p>
                 )}
               </div>
 

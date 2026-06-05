@@ -143,7 +143,7 @@ service cloud.firestore {
 
     function isValidCamera() {
       return hasOnlyAllowedFields([
-               'type', 'name', 'address', 'policeReferenceNumber', 'publicOutputUrl',
+               'type', 'name', 'address', 'policeReferenceNumber',
                'latitude', 'longitude', 'direction', 'fieldOfView', 'viewDistance',
                'addedBy', 'creatorEmail', 'createdAt', 'updatedAt', 'lastVerifiedAt'
              ]) &&
@@ -154,7 +154,6 @@ service cloud.firestore {
              isValidOptionalString('name', 0, 100) &&
              isValidOptionalString('address', 0, 200) &&
              isValidOptionalString('policeReferenceNumber', 0, 50) &&
-             isValidOptionalString('publicOutputUrl', 0, 500) &&
              request.resource.data.latitude is number &&
              request.resource.data.latitude >= -90 && request.resource.data.latitude <= 90 &&
              request.resource.data.longitude is number &&
@@ -194,6 +193,10 @@ service cloud.firestore {
     }
 
     match /cameras/{cameraId} {
+      allow read, write: if true;
+    }
+
+    match /archived_cameras/{archiveId} {
       allow read, write: if true;
     }
 

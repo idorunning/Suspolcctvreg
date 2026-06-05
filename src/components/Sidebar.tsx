@@ -1,39 +1,6 @@
 import React, { useState } from 'react';
-import { Camera, User } from '../types';
-import { Search, Plus, MapPin, Filter, Navigation, Loader2, Camera as CameraIcon, Video, Shield, Fuel, HelpCircle, ChevronDown, ChevronRight, Download, Cctv, ExternalLink, Play, Car } from 'lucide-react';
-
-const getLiveCameraType = (camera: Camera): 'webcam' | 'traffic' => {
-  const name = (camera.name || '').toLowerCase();
-  const url = (camera.publicOutputUrl || '').toLowerCase();
-  if (
-    name.includes('traffic') ||
-    name.includes('road') ||
-    name.includes('m23') ||
-    name.includes('a23') ||
-    name.includes('a27') ||
-    name.includes('motorway') ||
-    name.includes('incident') ||
-    url.includes('traffic') ||
-    camera.type === 'cctv'
-  ) {
-    if (
-      name.includes('seafront') ||
-      name.includes('beach') ||
-      name.includes('pier') ||
-      name.includes('lagoon') ||
-      name.includes('marina') ||
-      name.includes('watersports') ||
-      name.includes('port') ||
-      name.includes('harbour') ||
-      name.includes('watercams') ||
-      name.includes('i360')
-    ) {
-      return 'webcam';
-    }
-    return 'traffic';
-  }
-  return 'webcam';
-};
+import { Camera, User, UserRole } from '../types';
+import { Search, Plus, MapPin, Filter, Navigation, Loader2, Camera as CameraIcon, Video, Shield, Fuel, HelpCircle, ChevronDown, ChevronRight, Download, Cctv, Play, Car, CircleDot, Trash2, CheckSquare, Square } from 'lucide-react';
 
 interface SidebarProps {
   cameras: Camera[];
@@ -42,19 +9,30 @@ interface SidebarProps {
   selectedCameraId?: string;
   onLocationFound?: (lat: number, lng: number) => void;
   canAdd?: boolean;
+  circleFilter?: { center: [number, number]; radius: number } | null;
+  onClearCircleFilter?: () => void;
+  userRole?: UserRole | null;
+  onBulkDelete?: (cameraIds: string[]) => Promise<void>;
 }
 
 const PoliceCameraIcon = ({ size, className }: { size: number, className?: string }) => (
-  <div className={`relative flex items-center justify-center ${className}`} style={{ width: size, height: size }}>
-    <CameraIcon size={size} />
-    <Shield size={size * 0.5} className="absolute -bottom-1 -right-1 text-blue-800 bg-white rounded-full" fill="currentColor" />
-  </div>
+  <Shield size={size} className={className} fill="currentColor" />
 );
 
-export default function Sidebar({ cameras, onSelectCamera, onAddCameraClick, selectedCameraId, onLocationFound, canAdd = true }: SidebarProps) {
+export default function Sidebar({ 
+  cameras, 
+  onSelectCamera, 
+  onAddCameraClick, 
+  selectedCameraId, 
+  onLocationFound, 
+  canAdd = true,
+  circleFilter,
+  onClearCircleFilter,
+  userRole,
+  onBulkDelete
+}: SidebarProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
-  const [playingCameras, setPlayingCameras] = useState<Record<string, boolean>>({});
   
   const [locationSearch, setLocationSearch] = useState('');
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
@@ -64,14 +42,45 @@ export default function Sidebar({ cameras, onSelectCamera, onAddCameraClick, sel
   const [isPrimaryMenuOpen, setIsPrimaryMenuOpen] = useState(true);
   const [isCameraListOpen, setIsCameraListOpen] = useState(true);
 
+  // States for bulk deletion
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const filterTypes = [
     { id: 'all', label: 'All Types', icon: <Filter size={16} className="text-gray-500" /> },
-    { id: 'live', label: 'Live Cameras / Feeds', icon: <Video size={16} className="text-emerald-600" /> },
     { id: 'cctv', label: 'Retail CCTV', icon: <Cctv size={16} className="text-orange-500" /> },
     { id: 'police_council', label: 'Police/Council', icon: <PoliceCameraIcon size={16} className="text-blue-600" /> },
     { id: 'pfs', label: 'Petrol Filling Station (PFS)', icon: <Fuel size={16} className="text-orange-600" /> },
     { id: 'other', label: 'Other', icon: <HelpCircle size={16} className="text-gray-600" /> },
   ];
+
+  const handleSelectAll = () => {
+    const visibleIds = filteredCameras.map(c => c.id);
+    const allSelected = visibleIds.every(id => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    } else {
+      setSelectedIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handlePerformBulkDelete = async () => {
+    if (selectedIds.length === 0 || !onBulkDelete) return;
+    if (!window.confirm(`Are you sure you want to delete these ${selectedIds.length} cameras? They will be removed fully from the active registry and safely held in the archive for 30 days.`)) return;
+    
+    setIsDeleting(true);
+    try {
+      await onBulkDelete(selectedIds);
+      setSelectedIds([]);
+      setIsBulkMode(false);
+    } catch (err) {
+      console.error("Bulk delete failed:", err);
+      alert("Failed to delete cameras. Insufficient permissions.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const selectedFilterObj = filterTypes.find(t => t.id === filterType) || filterTypes[0];
 
@@ -79,11 +88,9 @@ export default function Sidebar({ cameras, onSelectCamera, onAddCameraClick, sel
     const matchesSearch = 
       camera.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       camera.address?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      camera.policeReferenceNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      camera.publicOutputUrl?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      ((searchTerm.toLowerCase() === 'live' || searchTerm.toLowerCase() === 'public' || searchTerm.toLowerCase() === 'feed' || searchTerm.toLowerCase() === 'webcam') && !!camera.publicOutputUrl);
+      camera.policeReferenceNumber?.toLowerCase().includes(searchTerm.toLowerCase());
       
-    const matchesType = filterType === 'all' || (filterType === 'live' ? !!camera.publicOutputUrl : camera.type === filterType);
+    const matchesType = filterType === 'all' || camera.type === filterType;
     
     return matchesSearch && matchesType;
   });
@@ -254,6 +261,28 @@ export default function Sidebar({ cameras, onSelectCamera, onAddCameraClick, sel
         </div>
       )}
 
+      {circleFilter && (
+        <div className="mx-4 mt-3 p-2.5 bg-blue-55 bg-blue-50 border border-blue-200 rounded-lg text-xs space-y-1 flex-shrink-0 shadow-sm">
+          <div className="flex items-center justify-between text-blue-800 font-bold">
+            <span className="flex items-center gap-1">
+              <CircleDot size={12} className="text-blue-600 animate-pulse" />
+              Circle Area Filter
+            </span>
+            <button
+              onClick={onClearCircleFilter}
+              className="text-[10px] text-blue-600 hover:text-blue-800 underline cursor-pointer font-bold"
+              style={{ background: 'none', border: 'none', padding: 0 }}
+              type="button"
+            >
+              Clear
+            </button>
+          </div>
+          <p className="text-gray-600 leading-relaxed font-medium">
+            Listing only the <span className="text-blue-700 font-bold">{cameras.length}</span> cameras within <span className="font-bold text-blue-900">{circleFilter.radius}m</span> of drawn area.
+          </p>
+        </div>
+      )}
+
       {/* Camera List Toggle */}
       <div 
         className="px-4 py-3 border-b border-gray-200 flex items-center justify-between cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors flex-shrink-0"
@@ -270,6 +299,62 @@ export default function Sidebar({ cameras, onSelectCamera, onAddCameraClick, sel
         )}
       </div>
 
+      {isCameraListOpen && (userRole === 'admin' || userRole === 'user') && (
+        <div className="bg-slate-50 border-b border-gray-200 px-4 py-2 flex items-center justify-between text-xs flex-shrink-0 font-semibold text-slate-600">
+          {!isBulkMode ? (
+            <>
+              <span className="text-gray-500">Registry Operations:</span>
+              <button
+                onClick={() => {
+                  setIsBulkMode(true);
+                  setSelectedIds([]);
+                }}
+                className="text-red-650 hover:text-red-700 font-bold flex items-center gap-1 cursor-pointer"
+                type="button"
+              >
+                <Trash2 size={13} />
+                Bulk Delete
+              </button>
+            </>
+          ) : (
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSelectAll}
+                  className="text-blue-600 hover:text-blue-800 font-bold cursor-pointer"
+                  type="button"
+                >
+                  {filteredCameras.map(c => c.id).every(id => selectedIds.includes(id)) ? 'Deselect All' : 'Select All'}
+                </button>
+                <span className="text-gray-400 font-normal">|</span>
+                <span className="text-gray-700 font-bold">{selectedIds.length} Selected</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePerformBulkDelete}
+                  disabled={selectedIds.length === 0 || isDeleting}
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-2 py-1 rounded disabled:opacity-50 flex items-center gap-1 cursor-pointer shadow-sm text-[10px]"
+                  type="button"
+                >
+                  {isDeleting ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                  Delete ({selectedIds.length})
+                </button>
+                <button
+                  onClick={() => {
+                    setIsBulkMode(false);
+                    setSelectedIds([]);
+                  }}
+                  className="text-gray-500 hover:text-gray-700 font-bold cursor-pointer"
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {isCameraListOpen && (
         <div className="flex-1 overflow-y-auto p-3 bg-gray-50 space-y-2">
           {filteredCameras.length === 0 ? (
@@ -278,173 +363,101 @@ export default function Sidebar({ cameras, onSelectCamera, onAddCameraClick, sel
             <div className="space-y-2">
               {filteredCameras.map((camera) => {
                 const isSelected = selectedCameraId === camera.id;
+                const isSelectedForBulk = selectedIds.includes(camera.id);
+                
+                const handleCardClick = () => {
+                  if (isBulkMode) {
+                    if (isSelectedForBulk) {
+                      setSelectedIds(prev => prev.filter(id => id !== camera.id));
+                    } else {
+                      setSelectedIds(prev => [...prev, camera.id]);
+                    }
+                  } else {
+                    onSelectCamera(camera);
+                  }
+                };
+
                 return (
                   <div
                     key={camera.id}
-                    onClick={() => onSelectCamera(camera)}
+                    onClick={handleCardClick}
                     className={`rounded-lg cursor-pointer border p-3 transition-colors text-left ${
-                      isSelected
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 bg-white hover:bg-gray-50'
+                      isBulkMode
+                        ? (isSelectedForBulk ? 'border-red-500 bg-red-50/50' : 'border-gray-200 bg-white hover:bg-gray-50')
+                        : (isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50')
                     }`}
                   >
-                    <div className="flex justify-between items-start gap-2">
+                    <div className="flex items-start gap-3">
+                      {isBulkMode && (
+                        <div className="flex-shrink-0 mt-1">
+                          {isSelectedForBulk ? (
+                            <CheckSquare className="text-red-650" size={17} />
+                          ) : (
+                            <Square className="text-gray-400" size={17} />
+                          )}
+                        </div>
+                      )}
+                      
                       <div className="min-w-0 flex-1">
-                        <h3 className="text-sm font-bold text-gray-900 truncate">
-                          {camera.name || camera.type.replace('_', ' ')}
-                        </h3>
-                        {camera.address && (
-                          <p className="text-xs text-gray-500 truncate mt-0.5">{camera.address}</p>
-                        )}
-                        {camera.publicOutputUrl && (
-                          <div className={`inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                            getLiveCameraType(camera) === 'traffic'
-                              ? 'text-indigo-800 bg-indigo-100'
-                              : 'text-green-800 bg-green-100'
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="text-sm font-bold text-gray-900 truncate">
+                              {camera.name || camera.type.replace('_', ' ')}
+                            </h3>
+                            {camera.address && (
+                              <p className="text-xs text-gray-500 truncate mt-0.5">{camera.address}</p>
+                            )}
+                          </div>
+                          <div className={`text-[10px] uppercase font-semibold px-2 py-0.5 rounded ${
+                            camera.type === 'cctv' ? 'bg-orange-100 text-orange-850' :
+                            camera.type === 'police_council' ? 'bg-blue-100 text-blue-800' :
+                            camera.type === 'pfs' ? 'bg-yellow-105 bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
                           }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${
-                              getLiveCameraType(camera) === 'traffic' ? 'bg-indigo-500' : 'bg-green-500'
-                            }`}></span>
-                            {getLiveCameraType(camera) === 'traffic' ? 'Traffic Live' : 'Public Webcam'}
+                            {camera.type === 'pfs' ? 'PFS' : camera.type.replace('_', ' ')}
+                          </div>
+                        </div>
+                        
+                        {isSelected && !isBulkMode && (
+                          <div className="mt-4 pt-3 border-t border-gray-200 text-xs space-y-2">
+                            <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600">
+                              <div>
+                                <span className="block text-gray-400">Type</span>
+                                <span className="font-semibold text-gray-800 capitalize">
+                                  {camera.type.replace('_', ' ')}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="block text-gray-400">Direction</span>
+                                <span className="font-semibold text-gray-800">
+                                  {camera.direction !== undefined ? `${camera.direction}°` : 'Omnidirectional'}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="bg-gray-100 p-2 rounded text-[10px] text-gray-600 space-y-1">
+                              <p><span className="text-gray-400">Coords:</span> {camera.latitude.toFixed(5)}, {camera.longitude.toFixed(5)}</p>
+                              <p><span className="text-gray-400">Added:</span> {camera.createdAt?.toDate ? camera.createdAt.toDate().toLocaleDateString() : 'N/A'}</p>
+                              <p><span className="text-gray-400">Verified:</span> {camera.lastVerifiedAt?.toDate ? camera.lastVerifiedAt.toDate().toLocaleDateString() : 'Never'}</p>
+                            </div>
+
+                            <div className="pt-2 border-t border-gray-200">
+                              <div className="bg-blue-50 p-2 rounded">
+                                <p className="text-[10px] text-blue-800 font-semibold mb-0.5">Reference & Legality</p>
+                                {camera.policeReferenceNumber ? (
+                                  <p className="text-gray-600 font-mono text-[10px]">
+                                    REF: {camera.policeReferenceNumber}
+                                  </p>
+                                ) : (
+                                  <p className="text-gray-400 italic text-[10px]">No reference recorded.</p>
+                                )}
+                                <p className="text-[9px] text-blue-500 font-medium mt-1">This is a public/retail camera. No private flat/house numbers recorded.</p>
+                              </div>
+                            </div>
                           </div>
                         )}
-                      </div>
-                      <div className={`text-[10px] uppercase font-semibold px-2 py-0.5 rounded ${
-                        camera.type === 'cctv' ? 'bg-orange-100 text-orange-850' :
-                        camera.type === 'police_council' ? 'bg-blue-100 text-blue-800' :
-                        camera.type === 'pfs' ? 'bg-yellow-105 bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {camera.type === 'pfs' ? 'PFS' : camera.type.replace('_', ' ')}
                       </div>
                     </div>
-                    
-                    {isSelected && (
-                      <div className="mt-4 pt-3 border-t border-gray-200 text-xs space-y-2">
-                        <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600">
-                          <div>
-                            <span className="block text-gray-400">Type</span>
-                            <span className="font-semibold text-gray-800 capitalize">
-                              {camera.type.replace('_', ' ')}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="block text-gray-400">Direction</span>
-                            <span className="font-semibold text-gray-800">
-                              {camera.direction !== undefined ? `${camera.direction}°` : 'Omnidirectional'}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="bg-gray-100 p-2 rounded text-[10px] text-gray-600 space-y-1">
-                          <p><span className="text-gray-400">Coords:</span> {camera.latitude.toFixed(5)}, {camera.longitude.toFixed(5)}</p>
-                          <p><span className="text-gray-400">Added:</span> {camera.createdAt?.toDate ? camera.createdAt.toDate().toLocaleDateString() : 'N/A'}</p>
-                          <p><span className="text-gray-400">Verified:</span> {camera.lastVerifiedAt?.toDate ? camera.lastVerifiedAt.toDate().toLocaleDateString() : 'Never'}</p>
-                        </div>
-
-                        {camera.publicOutputUrl && (
-                          <div className={`mt-3 p-2 bg-slate-100 rounded space-y-2`}>
-                            <p className="font-bold flex items-center gap-1 text-[11px] text-gray-700">
-                              <Video size={12} className="text-slate-500" />
-                              <span>Live Stream Output</span>
-                            </p>
-                            
-                            {playingCameras[camera.id] ? (
-                              <div className="space-y-2">
-                                {/\.(jpg|jpeg|png|webp|gif)/i.test(camera.publicOutputUrl) ? (
-                                  <div className="relative rounded overflow-hidden border border-gray-200 h-24 bg-black">
-                                    <img 
-                                      src={camera.publicOutputUrl} 
-                                      alt="CCTV" 
-                                      className="object-cover w-full h-full"
-                                      referrerPolicy="no-referrer"
-                                    />
-                                  </div>
-                                ) : camera.publicOutputUrl.includes('youtube.com') || camera.publicOutputUrl.includes('youtu.be') ? (
-                                  <div className="relative rounded overflow-hidden border border-gray-200 h-28 bg-black">
-                                    <iframe
-                                      src={camera.publicOutputUrl.replace('watch?v=', 'embed/').split('&')[0]}
-                                      title="YouTube Live Stream"
-                                      className="w-full h-full border-0"
-                                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                      allowFullScreen
-                                    ></iframe>
-                                  </div>
-                                ) : (
-                                  <div className="relative rounded overflow-hidden border border-gray-200 h-32 bg-black">
-                                    <iframe
-                                      src={((): string => {
-                                        const url = camera.publicOutputUrl || '';
-                                        if (url.includes('camsecure.co.uk/worthing_seafront_webcam.html')) {
-                                          return 'https://camsecure.uk/httpswebcam/camsecure/worthingmarineparade.html';
-                                        }
-                                        if (url.includes('Shoreham_Port_Webcam.html') || url.includes('shoreham-port.co.uk/webcams')) {
-                                          return 'https://camsecure.uk/httpswebcam/shorehamport/shorehamport.html';
-                                        }
-                                        if (url.includes('brighton-marina/webcam') || url.includes('Brighton_Harbour_Webcam.html')) {
-                                          return 'https://camsecure.uk/httpswebcam/brightonmarina/brightonmarina.html';
-                                        }
-                                        if (url.includes('worthingsailingclub.co.uk/club/webcam')) {
-                                          return 'https://camsecure.uk/httpswebcam/worthingsailing/worthingsailing.html';
-                                        }
-                                        return url;
-                                      })()}
-                                      title="Live camera feed"
-                                      className="w-full h-full border-0"
-                                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                      allowFullScreen
-                                    ></iframe>
-                                  </div>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => setPlayingCameras(prev => ({ ...prev, [camera.id]: false }))}
-                                  className="w-full py-1 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-bold text-[10px] transition-colors"
-                                >
-                                  Pause Stream
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="p-2 bg-white border border-gray-200 rounded text-center">
-                                <p className="text-[10px] text-gray-400 mb-1">Stream is paused to save data.</p>
-                                <button
-                                  type="button"
-                                  onClick={() => setPlayingCameras(prev => ({ ...prev, [camera.id]: true }))}
-                                  className="w-full py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-semibold flex items-center justify-center gap-1"
-                                >
-                                  <Play size={10} fill="currentColor" />
-                                  Play Stream
-                                </button>
-                              </div>
-                            )}
-
-                            <a 
-                              href={camera.publicOutputUrl} 
-                              target="_blank" 
-                              rel="noreferrer noopener"
-                              className="w-full py-1 bg-gray-900 hover:bg-gray-800 text-white rounded text-[10px] font-semibold flex items-center justify-center gap-1"
-                            >
-                              <ExternalLink size={10} />
-                              Open Live Webcam Site
-                            </a>
-                          </div>
-                        )}
-
-                        <div className="pt-2 border-t border-gray-200">
-                          <div className="bg-blue-50 p-2 rounded">
-                            <p className="text-[10px] text-blue-800 font-semibold mb-0.5">Reference & Legality</p>
-                            {camera.policeReferenceNumber ? (
-                              <p className="text-gray-600 font-mono text-[10px]">
-                                REF: {camera.policeReferenceNumber}
-                              </p>
-                            ) : (
-                              <p className="text-gray-400 italic text-[10px]">No reference recorded.</p>
-                            )}
-                            <p className="text-[9px] text-blue-500 font-medium mt-1">This is a public/retail camera. No private flat/house numbers recorded.</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })}

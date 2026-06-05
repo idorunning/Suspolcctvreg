@@ -44,7 +44,6 @@ export const importFromCSV = (file: File): Promise<Camera[]> => {
             viewDistance: row.viewDistance !== undefined && row.viewDistance !== null && row.viewDistance !== '' ? Number(row.viewDistance) : undefined,
             address: row.address || '',
             policeReferenceNumber: row.policeReferenceNumber || '',
-            publicOutputUrl: row.publicOutputUrl || '',
             addedBy: row.addedBy || 'local_user',
             creatorEmail: row.creatorEmail || '',
             createdAt: row.createdAt || new Date().toISOString(),

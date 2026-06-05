@@ -120,6 +120,40 @@
         }
       },
       "required": ["action", "userId", "userEmail", "timestamp"]
+    },
+    "ArchivedCamera": {
+      "title": "ArchivedCamera",
+      "description": "A record of a deleted camera held in backup for 30 days.",
+      "type": "object",
+      "properties": {
+        "originalId": {
+          "type": "string",
+          "description": "The original ID of the camera before deletion."
+        },
+        "originalCamera": {
+          "type": "object",
+          "description": "The complete original camera data object."
+        },
+        "deletedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the camera was deleted."
+        },
+        "deletedByUid": {
+          "type": "string",
+          "description": "User ID of the operator who deleted the camera."
+        },
+        "deletedByEmail": {
+          "type": "string",
+          "description": "Email of the operator who deleted the camera."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when this backup record expires (30 days)."
+        }
+      },
+      "required": ["originalId", "originalCamera", "deletedAt", "deletedByUid", "deletedByEmail", "expiresAt"]
     }
   },
   "firestore": {
@@ -128,6 +162,12 @@
         "$ref": "#/entities/Camera"
       },
       "description": "Stores all camera records."
+    },
+    "/archived_cameras/{archiveId}": {
+      "schema": {
+        "$ref": "#/entities/ArchivedCamera"
+      },
+      "description": "Stores archived/deleted camera records for 30 days."
     },
     "/users/{userId}": {
       "schema": {

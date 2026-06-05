@@ -18,10 +18,7 @@ interface AddCameraModalProps {
 }
 
 const PoliceCameraIcon = ({ size, className }: { size: number, className?: string }) => (
-  <div className={`relative flex items-center justify-center ${className}`} style={{ width: size, height: size }}>
-    <CameraIcon size={size} />
-    <Shield size={size * 0.5} className="absolute -bottom-1 -right-1 text-blue-800 bg-white rounded-full" fill="currentColor" />
-  </div>
+  <Shield size={size} className={className} fill="currentColor" />
 );
 
 export default function AddCameraModal({ lat, lng, onClose, onSave, initialData, draftDirection, draftDistance, onDirectionChange, onSetPosition, onDelete, onVerify }: AddCameraModalProps) {
@@ -30,7 +27,6 @@ export default function AddCameraModal({ lat, lng, onClose, onSave, initialData,
   const [isEditingName, setIsEditingName] = useState(false);
   const [policeReferenceNumber, setPoliceReferenceNumber] = useState(initialData?.policeReferenceNumber || '');
   const [address, setAddress] = useState(initialData?.address || '');
-  const [publicOutputUrl, setPublicOutputUrl] = useState(initialData?.publicOutputUrl || '');
   const [direction, setDirection] = useState<number | ''>(initialData?.direction ?? (draftDirection ?? ''));
   const [fieldOfView, setFieldOfView] = useState<number | ''>(initialData?.fieldOfView ?? 90);
   const [viewDistance, setViewDistance] = useState<number | ''>(initialData?.viewDistance ?? (draftDistance ?? 30));
@@ -84,20 +80,12 @@ export default function AddCameraModal({ lat, lng, onClose, onSave, initialData,
       return;
     }
 
-    const urlPiiViolation = scanForPII(publicOutputUrl);
-    if (urlPiiViolation) {
-      setError(`PII detected in Public Output URL: ${urlPiiViolation}`);
-      setIsSaving(false);
-      return;
-    }
-
     try {
       await onSave({
         type,
         name: name.trim() === '' ? undefined : name,
         policeReferenceNumber: policeReferenceNumber.trim() === '' ? undefined : policeReferenceNumber,
         address: address.trim() === '' ? undefined : address,
-        publicOutputUrl: publicOutputUrl.trim() === '' ? undefined : publicOutputUrl,
         latitude: lat,
         longitude: lng,
         direction: direction === '' ? undefined : Number(direction),
@@ -238,25 +226,6 @@ export default function AddCameraModal({ lat, lng, onClose, onSave, initialData,
             </div>
 
             <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Public Stream / Viewable Link URL</label>
-                <span className="text-[9px] uppercase font-mono font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded px-1">Sussex Public Webcams</span>
-              </div>
-              <input
-                type="text"
-                value={publicOutputUrl}
-                onChange={(e) => setPublicOutputUrl(e.target.value)}
-                placeholder="e.g. https://www.visitbrighton.com/webcam or live feeds"
-                className="w-full bg-white border border-slate-200 rounded-xl py-2 px-3.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-600/10 focus:border-blue-600 transition-all font-sans text-slate-900 placeholder-slate-400"
-              />
-              {scanForPII(publicOutputUrl) ? (
-                <p className="text-[10px] text-red-650 mt-1 font-semibold">⚠️ {scanForPII(publicOutputUrl)}</p>
-              ) : (
-                <p className="text-[10px] text-slate-400 mt-1.5 font-medium leading-relaxed">Optional live stream URL to display active viewport directly inside the dashboard preview.</p>
-              )}
-            </div>
-
-            <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Location & Direction</label>
               <div className="flex items-center gap-2">
                 <div className="flex-1 flex gap-3 text-[11px] text-slate-750 bg-slate-100 border border-slate-200/60 p-2.5 rounded-xl font-mono font-semibold">
@@ -267,7 +236,7 @@ export default function AddCameraModal({ lat, lng, onClose, onSave, initialData,
                   <button
                     type="button"
                     onClick={() => onSetPosition({
-                      type, name, policeReferenceNumber, address, publicOutputUrl,
+                      type, name, policeReferenceNumber, address,
                       direction: direction === '' ? undefined : Number(direction),
                       fieldOfView: fieldOfView === '' ? undefined : Number(fieldOfView),
                       viewDistance: viewDistance === '' ? undefined : Number(viewDistance)

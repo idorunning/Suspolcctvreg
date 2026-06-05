@@ -1,12 +1,14 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Camera } from '../types';
-import { Camera as CameraIcon, Video, Shield, HelpCircle, Move, Fuel, ArrowLeftRight, Cctv, Edit2 } from 'lucide-react';
+import { 
+  Camera as CameraIcon, Video, Shield, HelpCircle, Move, Fuel, ArrowLeftRight, Cctv, Edit2,
+  Layers, Map as MapIcon, Globe, CircleDot, X, Download, Sliders, ChevronDown, ChevronUp, Check
+} from 'lucide-react';
 import { renderToString } from 'react-dom/server';
 import { calculateBearing, calculateDestination, calculateDistance } from '../utils/geo';
-import HeatmapLayer from './HeatmapLayer';
 import CoverageGapsLayer from './CoverageGapsLayer';
 
 // Fix Leaflet default icon issue
@@ -39,22 +41,35 @@ interface MapComponentProps {
   onEditCamera?: (camera: Camera) => void;
   canEditCamera?: (camera: Camera) => boolean;
   focusTrigger?: number;
+  // Circle Filter props
+  circleFilter?: { center: [number, number]; radius: number } | null;
+  onCircleFilterChange?: (filter: { center: [number, number]; radius: number } | null) => void;
+  isDrawingCircle?: boolean;
+  setIsDrawingCircle?: (val: boolean) => void;
 }
 
-const MapEvents = ({ onMapClick, isAddingCamera }: { onMapClick?: (lat: number, lng: number) => void, isAddingCamera?: boolean }) => {
+const MapEvents = ({ 
+  onMapClick, 
+  isAddingCamera, 
+  isDrawingCircle 
+}: { 
+  onMapClick?: (lat: number, lng: number) => void, 
+  isAddingCamera?: boolean,
+  isDrawingCircle?: boolean
+}) => {
   const map = useMap();
   
   useEffect(() => {
-    if (isAddingCamera) {
+    if (isAddingCamera || isDrawingCircle) {
       map.getContainer().style.cursor = 'crosshair';
     } else {
       map.getContainer().style.cursor = '';
     }
-  }, [isAddingCamera, map]);
+  }, [isAddingCamera, isDrawingCircle, map]);
 
   useEffect(() => {
     const handleClick = (e: L.LeafletMouseEvent) => {
-      if (isAddingCamera && onMapClick) {
+      if ((isAddingCamera || isDrawingCircle) && onMapClick) {
         onMapClick(e.latlng.lat, e.latlng.lng);
       }
     };
@@ -62,7 +77,7 @@ const MapEvents = ({ onMapClick, isAddingCamera }: { onMapClick?: (lat: number, 
     return () => {
       map.off('click', handleClick);
     };
-  }, [map, isAddingCamera, onMapClick]);
+  }, [map, isAddingCamera, isDrawingCircle, onMapClick]);
 
   return null;
 };
@@ -89,49 +104,130 @@ const MapFocus = ({ selectedCamera, mapCenter, draftCamera, isAddingCamera, focu
   return null;
 };
 
-const PoliceCameraIcon = ({ size, color }: { size: number, color: string }) => (
-  <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-    <CameraIcon size={size} color={color} />
-    <Shield size={size * 0.5} color="#1e3a8a" fill="#3b82f6" className="absolute -bottom-1 -right-1" />
-  </div>
-);
-
-const getIconForType = (type: string) => {
+const getIconForType = (type: string, size = 24) => {
   switch (type) {
-    case 'cctv': return <Cctv size={24} color="#ffffff" />;
-    case 'police_council': return <PoliceCameraIcon size={24} color="#ffffff" />;
-    case 'pfs': return <Fuel size={24} color="#ffffff" />;
-    default: return <HelpCircle size={24} color="#ffffff" />;
+    case 'cctv': 
+      return <Cctv size={size} color="#ffffff" strokeWidth={2.5} />;
+    case 'police_council': 
+      return <Shield size={size} color="#ffffff" fill="#ffffff" strokeWidth={1} />;
+    case 'pfs': 
+      return <Fuel size={size} color="#ffffff" strokeWidth={2.5} />;
+    default: 
+      return <HelpCircle size={size} color="#ffffff" strokeWidth={2.5} />;
   }
 };
 
 const getBgColorForType = (type: string) => {
   switch (type) {
     case 'cctv': return 'bg-orange-500';
-    case 'police_council': return 'bg-blue-500';
-    case 'pfs': return 'bg-red-500';
-    default: return 'bg-gray-500';
+    case 'police_council': return 'bg-blue-600';
+    case 'pfs': return 'bg-red-600';
+    default: return 'bg-slate-500';
   }
 };
 
-const createCustomIcon = (type: string, direction?: number, isDraft = false) => {
+const ZoomTracker = ({ onZoomChange }: { onZoomChange: (z: number) => void }) => {
+  const map = useMap();
+  useEffect(() => {
+    const handleZoom = () => {
+      onZoomChange(map.getZoom());
+    };
+    map.on('zoom', handleZoom);
+    map.on('zoomend', handleZoom);
+    // Trigger initial set
+    onZoomChange(map.getZoom());
+    return () => {
+      map.off('zoom', handleZoom);
+      map.off('zoomend', handleZoom);
+    };
+  }, [map, onZoomChange]);
+  return null;
+};
+
+const createCustomIcon = (type: string, direction?: number, isDraft = false, zoom = 12, isSelected = false) => {
   const bgColor = getBgColorForType(type);
+  
+  // Dynamic scaling based on zoom
+  let size = 22;
+  let showInnerIcon = true;
+  let innerIconSize = 12;
+  let borderWidth = 2;
+  
+  if (zoom <= 10) {
+    size = 7;
+    showInnerIcon = false;
+    borderWidth = 1;
+  } else if (zoom === 11) {
+    size = 9;
+    showInnerIcon = false;
+    borderWidth = 1;
+  } else if (zoom === 12) {
+    size = 12;
+    showInnerIcon = false;
+    borderWidth = 1.25;
+  } else if (zoom === 13) {
+    size = 16;
+    showInnerIcon = true;
+    innerIconSize = 9;
+    borderWidth = 1.5;
+  } else if (zoom === 14) {
+    size = 20;
+    showInnerIcon = true;
+    innerIconSize = 11;
+    borderWidth = 1.5;
+  } else if (zoom === 15) {
+    size = 24;
+    showInnerIcon = true;
+    innerIconSize = 13;
+    borderWidth = 2;
+  } else { // zoom >= 16
+    size = 28;
+    showInnerIcon = true;
+    innerIconSize = 15;
+    borderWidth = 2;
+  }
+
+  // Arrow proportions rotating exactly around center of icon
+  const arrowHeight = Math.max(4, Math.round(size * 0.3));
+  const arrowWidth = Math.max(3, Math.round(size * 0.18));
+  const topOffset = -(arrowHeight + 1);
+  const originY = (size / 2) + Math.abs(topOffset);
+
+  let borderClass = 'border-white';
+  if (isDraft) {
+    borderClass = 'border-amber-400 animate-pulse';
+  } else if (isSelected) {
+    borderClass = 'marker-selected-pulse';
+  }
+
   const iconHtml = renderToString(
     <div 
-      className={`relative flex items-center justify-center w-12 h-12 ${bgColor} rounded-full border-[3px] ${isDraft ? 'border-amber-400 animate-pulse' : 'border-white'}`}
+      className={`relative flex items-center justify-center ${bgColor} rounded-full ${borderClass}`}
       style={{
-        boxShadow: '0 0 0 2px rgba(0,0,0,0.4), 0 6px 16px rgba(0,0,0,0.6), inset 0 2px 4px rgba(255,255,255,0.6)'
+        width: `${size}px`,
+        height: `${size}px`,
+        borderWidth: `${borderWidth}px`,
+        borderStyle: 'solid',
+        boxShadow: size > 9 
+          ? '0 0 0 1px rgba(0,0,0,0.4), 0 3px 6px rgba(0,0,0,0.35), inset 0 1px 2px rgba(255,255,255,0.4)' 
+          : '0 1px 2px rgba(0,0,0,0.4)',
+        transition: 'width 0.15s ease, height 0.15s ease'
       }}
     >
-      {getIconForType(type)}
-      {direction !== undefined && (
+      {showInnerIcon && getIconForType(type, innerIconSize)}
+      {direction !== undefined && !isNaN(direction) && size > 9 && (
         <div 
-          className="absolute w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-b-[18px] border-b-red-500"
+          className="absolute w-0 h-0"
           style={{
-            top: '-20px',
+            left: '50%',
+            top: `${topOffset}px`,
+            marginLeft: `-${arrowWidth}px`,
+            borderLeft: `${arrowWidth}px solid transparent`,
+            borderRight: `${arrowWidth}px solid transparent`,
+            borderBottom: `${arrowHeight}px solid #ef4444`,
             transform: `rotate(${direction}deg)`,
-            transformOrigin: '50% 42px',
-            filter: 'drop-shadow(0px 2px 2px rgba(0,0,0,0.6))'
+            transformOrigin: `${arrowWidth}px ${originY}px`,
+            filter: 'drop-shadow(0px 1px 1.5px rgba(0,0,0,0.45))'
           }}
         />
       )}
@@ -141,9 +237,9 @@ const createCustomIcon = (type: string, direction?: number, isDraft = false) => 
   return L.divIcon({
     html: iconHtml,
     className: 'custom-camera-icon bg-transparent border-none',
-    iconSize: [48, 48],
-    iconAnchor: [24, 24],
-    popupAnchor: [0, -24]
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2]
   });
 };
 
@@ -219,8 +315,99 @@ const calculateFovPolygon = (lat: number, lng: number, direction: number, fov: n
   return points;
 };
 
-export default function MapComponent({ cameras, selectedCamera, onSelectCamera, onMapClick, isAddingCamera, mapCenter, draftCamera, onDraftDirectionChange, showHeatmap, onEditCamera, canEditCamera, focusTrigger }: MapComponentProps) {
+export default function MapComponent({ 
+  cameras, 
+  selectedCamera, 
+  onSelectCamera, 
+  onMapClick, 
+  isAddingCamera, 
+  mapCenter, 
+  draftCamera, 
+  onDraftDirectionChange, 
+  showHeatmap, 
+  onEditCamera, 
+  canEditCamera, 
+  focusTrigger,
+  circleFilter,
+  onCircleFilterChange,
+  isDrawingCircle,
+  setIsDrawingCircle
+}: MapComponentProps) {
   const defaultCenter: [number, number] = [50.936, -0.141]; 
+  
+  const [mapLayer, setMapLayer] = useState<'road' | 'satellite' | 'plain' | 'humanitarian'>('road');
+  const [isControlsExpanded, setIsControlsExpanded] = useState(true);
+  const [mapZoom, setMapZoom] = useState(12);
+
+  const [mapFilters, setMapFilters] = useState({
+    cctv: true,
+    police_council: true,
+    pfs: true,
+    other: true
+  });
+
+  const toggleMapFilter = (key: keyof typeof mapFilters) => {
+    setMapFilters(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  const mapFilteredCameras = useMemo(() => {
+    return cameras.filter(camera => {
+      // Avoid showing the duplicate non-draft icon of the camera currently being edited
+      if (draftCamera && selectedCamera && camera.id === selectedCamera.id) {
+        return false;
+      }
+      // Check standard camera type is enabled
+      const typeKey = camera.type === 'police_council' ? 'police_council' : (camera.type as keyof typeof mapFilters);
+      if (!mapFilters[typeKey]) {
+        return false;
+      }
+      return true;
+    });
+  }, [cameras, mapFilters, draftCamera, selectedCamera]);
+
+  const handleExportCircleCSV = () => {
+    if (mapFilteredCameras.length === 0) return;
+    
+    const headers = ['ID', 'Type', 'Name', 'Address', 'Police Reference', 'Latitude', 'Longitude', 'Direction', 'Field of View', 'View Distance', 'Creator Email', 'Created At', 'Last Verified At'];
+    
+    const csvRows = [
+      headers.join(','),
+      ...mapFilteredCameras.map(c => {
+        const createdAt = c.createdAt?.toDate ? c.createdAt.toDate().toISOString() : '';
+        const lastVerifiedAt = c.lastVerifiedAt?.toDate ? c.lastVerifiedAt.toDate().toISOString() : '';
+        
+        return [
+          c.id,
+          c.type,
+          `"${(c.name || '').replace(/"/g, '""')}"`,
+          `"${(c.address || '').replace(/"/g, '""')}"`,
+          `"${(c.policeReferenceNumber || '').replace(/"/g, '""')}"`,
+          c.latitude,
+          c.longitude,
+          c.direction !== undefined ? c.direction : '',
+          c.fieldOfView !== undefined ? c.fieldOfView : '',
+          c.viewDistance !== undefined ? c.viewDistance : '',
+          `"${(c.creatorEmail || '').replace(/"/g, '""')}"`,
+          createdAt,
+          lastVerifiedAt
+        ].join(',');
+      })
+    ];
+    
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `circle_cameras_${circleFilter?.radius || 0}m_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Calculate handle position for draft camera
   const handlePos = useMemo(() => {
     if (!draftCamera || draftCamera.direction === undefined || isNaN(draftCamera.direction)) return null;
@@ -258,87 +445,106 @@ export default function MapComponent({ cameras, selectedCamera, onSelectCamera, 
   return (
     <div className="w-full h-full relative">
       <MapContainer center={defaultCenter} zoom={10} className="w-full h-full z-0">
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <MapEvents onMapClick={onMapClick} isAddingCamera={isAddingCamera} />
+        {mapLayer === 'road' && (
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+        )}
+        {mapLayer === 'satellite' && (
+          <TileLayer
+            attribution='Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          />
+        )}
+        {mapLayer === 'plain' && (
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          />
+        )}
+        {mapLayer === 'humanitarian' && (
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles style by <a href="https://hotosm.org/">Humanitarian OpenStreetMap Team</a>'
+            url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png"
+          />
+        )}
+        <MapEvents onMapClick={onMapClick} isAddingCamera={isAddingCamera} isDrawingCircle={isDrawingCircle} />
+        <ZoomTracker onZoomChange={setMapZoom} />
         <MapFocus selectedCamera={selectedCamera} mapCenter={mapCenter} draftCamera={draftCamera} isAddingCamera={!!isAddingCamera} focusTrigger={focusTrigger} />
         
-        {showHeatmap && <HeatmapLayer cameras={cameras} />}
-
+        {circleFilter && (
+          <Circle
+            center={circleFilter.center}
+            radius={circleFilter.radius}
+            pathOptions={{
+              color: '#2563eb',
+              fillColor: '#3b82f6',
+              fillOpacity: 0.15,
+              weight: 2,
+              dashArray: '4'
+            }}
+          />
+        )}
+        
         {/* Render existing cameras */}
-        {!draftCamera && cameras.map((camera) => (
-          <React.Fragment key={camera.id}>
-            <Marker 
-              position={[camera.latitude, camera.longitude]}
-              icon={createCustomIcon(camera.type, camera.direction)}
-              eventHandlers={{
-                click: () => onSelectCamera(camera)
-              }}
-            >
-              <Popup>
-                <div className="p-1 min-w-[150px]">
-                  <h3 className="font-bold text-lg capitalize">{camera.name || `${camera.type.replace('_', ' ')} Camera`}</h3>
-                  {camera.address && <p className="text-sm text-gray-600">{camera.address}</p>}
-                  {camera.policeReferenceNumber && <p className="text-sm mt-1">Ref: {camera.policeReferenceNumber}</p>}
-                  
-                  {camera.publicOutputUrl && (
-                    <div className="mt-2 mb-1 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1.5 rounded flex flex-col gap-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                        <span className="font-semibold">Public Stream Active</span>
-                      </div>
-                      <a
-                        href={camera.publicOutputUrl}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        className="w-full flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white py-1 px-2 rounded text-[11px] font-semibold transition-colors text-center"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Launch Output Feed
-                      </a>
-                    </div>
-                  )}
-
-                  {onEditCamera && canEditCamera && canEditCamera(camera) && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onEditCamera(camera);
-                      }}
-                      className="mt-2 w-full flex items-center justify-center gap-1 bg-blue-100 text-blue-800 px-3 py-1.5 rounded-md text-xs font-medium border border-blue-200 hover:bg-blue-200 transition-colors"
-                    >
-                      <Edit2 size={12} />
-                      Amend Camera
-                    </button>
-                  )}
-                </div>
-              </Popup>
-            </Marker>
-            
-            {camera.direction !== undefined && !isNaN(camera.direction) && camera.fieldOfView !== undefined && camera.fieldOfView > 0 && (
-              <Polygon 
-                key={`polygon-${camera.id}-${camera.direction}-${camera.fieldOfView}-${camera.viewDistance}`}
-                positions={calculateFovPolygon(camera.latitude, camera.longitude, camera.direction, camera.fieldOfView, camera.viewDistance || 30)}
-                pathOptions={{ 
-                  color: selectedCamera?.id === camera.id ? '#ef4444' : '#3b82f6', 
-                  fillColor: selectedCamera?.id === camera.id ? '#ef4444' : '#3b82f6', 
-                  fillOpacity: selectedCamera?.id === camera.id ? 0.4 : 0.2,
-                  weight: selectedCamera?.id === camera.id ? 2 : 1,
-                  className: selectedCamera?.id === camera.id ? 'cone-glow-selected' : 'cone-glow-default'
+        {mapFilteredCameras.map((camera) => {
+          const isSelected = selectedCamera?.id === camera.id;
+          return (
+            <React.Fragment key={`${camera.id}-${mapZoom}-${isSelected}`}>
+              <Marker 
+                position={[camera.latitude, camera.longitude]}
+                icon={createCustomIcon(camera.type, camera.direction, false, mapZoom, isSelected)}
+                eventHandlers={{
+                  click: () => onSelectCamera(camera)
                 }}
-              />
-            )}
-          </React.Fragment>
-        ))}
+              >
+                <Popup>
+                  <div className="p-1 min-w-[150px]">
+                    <h3 className="font-bold text-lg capitalize">{camera.name || `${camera.type.replace('_', ' ')} Camera`}</h3>
+                    {camera.address && <p className="text-sm text-gray-600">{camera.address}</p>}
+                    {camera.policeReferenceNumber && <p className="text-sm mt-1">Ref: {camera.policeReferenceNumber}</p>}
+
+                    {onEditCamera && canEditCamera && canEditCamera(camera) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditCamera(camera);
+                        }}
+                        className="mt-2 w-full flex items-center justify-center gap-1 bg-blue-100 text-blue-800 px-3 py-1.5 rounded-md text-xs font-medium border border-blue-200 hover:bg-blue-200 transition-colors"
+                      >
+                        <Edit2 size={12} />
+                        Amend Camera
+                      </button>
+                    )}
+                  </div>
+                </Popup>
+              </Marker>
+              
+              {camera.direction !== undefined && !isNaN(camera.direction) && camera.fieldOfView !== undefined && camera.fieldOfView > 0 && (
+                <Polygon 
+                  key={`polygon-${camera.id}-${camera.direction}-${camera.fieldOfView}-${camera.viewDistance}`}
+                  positions={calculateFovPolygon(camera.latitude, camera.longitude, camera.direction, camera.fieldOfView, camera.viewDistance || 30)}
+                  pathOptions={{ 
+                    color: isSelected ? '#ef4444' : '#3b82f6', 
+                    fillColor: isSelected ? '#ef4444' : '#3b82f6', 
+                    fillOpacity: isSelected ? 0.4 : 0.2,
+                    weight: isSelected ? 2 : 1,
+                    className: isSelected ? 'cone-glow-selected' : 'cone-glow-default'
+                  }}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
 
         {/* Render draft camera for adding/editing */}
         {draftCamera && (
           <React.Fragment>
             <Marker 
+              key={`draft-marker-${draftCamera.lat}-${draftCamera.lng}-${mapZoom}`}
               position={[draftCamera.lat, draftCamera.lng]}
-              icon={createCustomIcon(draftCamera.type, draftCamera.direction, true)}
+              icon={createCustomIcon(draftCamera.type, draftCamera.direction, true, mapZoom)}
             />
             {draftCamera.direction !== undefined && !isNaN(draftCamera.direction) && draftCamera.fieldOfView !== undefined && draftCamera.fieldOfView > 0 && (
               <Polygon 
@@ -386,6 +592,232 @@ export default function MapComponent({ cameras, selectedCamera, onSelectCamera, 
           Drag the red handle to aim the camera
         </div>
       )}
+
+      {/* Recrafted Floating Overlays: Map style switcher + Circle filtering */}
+      <div className="absolute top-4 right-4 z-[1001] flex flex-col gap-2.5 max-w-xs w-72 pointer-events-auto select-none sm:top-6 sm:right-6">
+        <div className="bg-slate-900/95 backdrop-blur-md p-4 rounded-2xl border border-slate-700/70 shadow-2xl flex flex-col gap-3 text-slate-200">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
+              <Layers size={14} className="text-blue-400" />
+              Map Controller
+            </h3>
+            <button
+              onClick={() => setIsControlsExpanded(!isControlsExpanded)}
+              className="p-1 text-slate-400 hover:text-slate-150 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              title={isControlsExpanded ? "Collapse Controls" : "Expand Controls"}
+              type="button"
+            >
+              {isControlsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          </div>
+
+          {isControlsExpanded && (
+            <div className="space-y-4 pt-2 border-t border-slate-800">
+              {/* Map base layer selector */}
+              <div className="space-y-1.5">
+                <span className="text-[9px] font-bold text-slate-450 uppercase tracking-wider block">Base Map Type</span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => setMapLayer('road')}
+                    className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                      mapLayer === 'road'
+                        ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/10'
+                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-305 border-slate-700/60'
+                    }`}
+                    type="button"
+                  >
+                    <MapIcon size={11} className={mapLayer === 'road' ? 'text-white' : 'text-slate-400'} />
+                    Road map
+                  </button>
+                  <button
+                    onClick={() => setMapLayer('satellite')}
+                    className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                      mapLayer === 'satellite'
+                        ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/10'
+                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-305 border-slate-700/60'
+                    }`}
+                    type="button"
+                  >
+                    <Globe size={11} className={mapLayer === 'satellite' ? 'text-white' : 'text-slate-400'} />
+                    Satellite
+                  </button>
+                  <button
+                    onClick={() => setMapLayer('plain')}
+                    className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                      mapLayer === 'plain'
+                        ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/10'
+                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-305 border-slate-700/60'
+                    }`}
+                    type="button"
+                  >
+                    <CircleDot size={11} className={mapLayer === 'plain' ? 'text-white' : 'text-slate-400'} />
+                    Plain slate
+                  </button>
+                  <button
+                    onClick={() => setMapLayer('humanitarian')}
+                    className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                      mapLayer === 'humanitarian'
+                        ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/10'
+                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-305 border-slate-700/60'
+                    }`}
+                    type="button"
+                  >
+                    <Sliders size={11} className={mapLayer === 'humanitarian' ? 'text-white' : 'text-slate-400'} />
+                    Road focus
+                  </button>
+                </div>
+              </div>
+
+              {/* Visible Camera Types (Map Only) */}
+              <div className="space-y-1.5 pt-2 border-t border-slate-800">
+                <span className="text-[9px] font-bold text-slate-450 uppercase tracking-wider block">Visible Camera Types</span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => toggleMapFilter('cctv')}
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                      mapFilters.cctv
+                        ? 'bg-orange-950/40 text-orange-400 border-orange-500/30'
+                        : 'bg-slate-800/30 text-slate-500 border-slate-800 line-through opacity-40 hover:opacity-90'
+                    }`}
+                    type="button"
+                  >
+                    <Cctv size={11} className={mapFilters.cctv ? 'text-orange-450' : 'text-slate-600'} />
+                    CCTV
+                  </button>
+                  <button
+                    onClick={() => toggleMapFilter('police_council')}
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                      mapFilters.police_council
+                        ? 'bg-blue-995/43 text-blue-400 border-blue-500/30'
+                        : 'bg-slate-800/30 text-slate-500 border-slate-800 line-through opacity-40 hover:opacity-90'
+                    }`}
+                    type="button"
+                  >
+                    <Shield size={11} fill={mapFilters.police_council ? "currentColor" : "none"} className={mapFilters.police_council ? 'text-blue-450' : 'text-slate-600'} />
+                    Police
+                  </button>
+                  <button
+                    onClick={() => toggleMapFilter('pfs')}
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                      mapFilters.pfs
+                        ? 'bg-rose-950/40 text-red-400 border-red-500/30'
+                        : 'bg-slate-800/30 text-slate-500 border-slate-800 line-through opacity-40 hover:opacity-90'
+                    }`}
+                    type="button"
+                  >
+                    <Fuel size={11} className={mapFilters.pfs ? 'text-rose-450' : 'text-slate-600'} />
+                    PFS
+                  </button>
+                  <button
+                    onClick={() => toggleMapFilter('other')}
+                    className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
+                      mapFilters.other
+                        ? 'bg-slate-800 text-slate-300 border-slate-700/60'
+                        : 'bg-slate-800/30 text-slate-500 border-slate-800 line-through opacity-40 hover:opacity-90'
+                    }`}
+                    type="button"
+                  >
+                    <HelpCircle size={11} className={mapFilters.other ? 'text-slate-350' : 'text-slate-600'} />
+                    Other
+                  </button>
+                </div>
+              </div>
+
+              {/* Circle filter area */}
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <span className="text-[9px] font-bold text-slate-450 uppercase tracking-wider block">Map area search</span>
+                
+                {circleFilter ? (
+                  <div className="bg-slate-800/40 rounded-xl p-2.5 border border-slate-800 space-y-2.5">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-[8px] font-bold text-slate-450 uppercase tracking-wider block">Boundary Range</span>
+                        <p className="text-[11px] font-bold text-slate-200 mt-0.5">
+                          {circleFilter.radius >= 1000 ? `${(circleFilter.radius / 1000).toFixed(1)} km` : `${circleFilter.radius}m`} radius
+                        </p>
+                      </div>
+                      <span className="bg-blue-900/40 text-blue-300 text-[10px] font-bold px-2 py-0.5 rounded-full select-none">
+                        {mapFilteredCameras.length} {mapFilteredCameras.length === 1 ? 'camera' : 'cameras'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[8px] text-slate-450 font-bold tracking-wider uppercase">
+                        <span>100m</span>
+                        <span>Drag range slider</span>
+                        <span>5km</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="100" 
+                        max="5000" 
+                        step="50" 
+                        value={circleFilter.radius} 
+                        onChange={(e) => {
+                          if (onCircleFilterChange) {
+                            onCircleFilterChange({
+                              ...circleFilter,
+                              radius: parseInt(e.target.value)
+                            });
+                          }
+                        }}
+                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500 mt-1"
+                      />
+                    </div>
+
+                    <div className="flex gap-1.5 pt-0.5">
+                      <button
+                        onClick={handleExportCircleCSV}
+                        disabled={mapFilteredCameras.length === 0}
+                        className="flex-1 flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-30 disabled:hover:bg-emerald-600 text-white font-bold py-1.5 px-2 rounded-lg text-[10px] transition-colors cursor-pointer text-center border-none"
+                        title="Export details of cameras inside circle to spreadsheet file"
+                        type="button"
+                      >
+                        <Download size={11} />
+                        Export details
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (onCircleFilterChange) onCircleFilterChange(null);
+                        }}
+                        className="p-1 px-2 border border-slate-700 hover:bg-slate-800 hover:text-red-400 rounded-lg text-slate-350 text-[10px] transition-colors cursor-pointer font-bold"
+                        title="Clear area filter"
+                        type="button"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <button
+                      onClick={() => {
+                        if (setIsDrawingCircle) {
+                          setIsDrawingCircle(!isDrawingCircle);
+                        }
+                      }}
+                      className={`w-full flex items-center justify-center gap-1.5 font-bold py-2 px-3 rounded-lg text-xs transition-all tracking-wide cursor-pointer select-none ${
+                        isDrawingCircle
+                          ? 'bg-amber-950/50 text-amber-400 border border-amber-550 animate-pulse'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md border-none'
+                      }`}
+                      type="button"
+                    >
+                      <CircleDot size={13} fill={isDrawingCircle ? "currentColor" : "none"} />
+                      {isDrawingCircle ? 'Click on map...' : 'Filter Area by Circle'}
+                    </button>
+                    {!isDrawingCircle && (
+                      <p className="text-[9px] text-slate-450 italic text-center leading-normal">
+                        Click to draw a circle over the map and filter cameras instantly.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

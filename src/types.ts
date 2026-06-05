@@ -1,7 +1,7 @@
 export type CameraType = 'cctv' | 'police_council' | 'other' | 'pfs';
 export type UserRole = 'admin' | 'user' | 'viewer';
 export type UserStatus = 'pending' | 'approved';
-export type EventAction = 'login' | 'logout' | 'camera_added' | 'camera_amended' | 'camera_removed';
+export type EventAction = 'login' | 'logout' | 'camera_added' | 'camera_amended' | 'camera_removed' | 'user_created' | 'user_removed';
 
 export interface Camera {
   id: string;
@@ -9,7 +9,6 @@ export interface Camera {
   address?: string;
   type: CameraType;
   policeReferenceNumber?: string;
-  publicOutputUrl?: string;
   latitude: number;
   longitude: number;
   direction?: number;
@@ -38,4 +37,29 @@ export interface EventLog {
   userEmail: string;
   details?: string;
   timestamp: any; // Firestore Timestamp
+}
+
+export interface ArchivedCamera {
+  id: string;
+  originalId: string;
+  originalCamera: {
+    type: CameraType;
+    name?: string;
+    address?: string;
+    policeReferenceNumber?: string;
+    latitude: number;
+    longitude: number;
+    direction?: number;
+    fieldOfView?: number;
+    viewDistance?: number;
+    addedBy: string;
+    creatorEmail: string;
+    lastVerifiedAt?: any;
+    createdAt: any;
+    updatedAt: any;
+  };
+  deletedAt: any;
+  deletedByUid: string;
+  deletedByEmail: string;
+  expiresAt: any;
 }
