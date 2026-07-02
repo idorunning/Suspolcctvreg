@@ -3,9 +3,9 @@ import { ArrowLeft, CheckCircle, Crosshair, Cctv, Fuel, HelpCircle, Loader2, Shi
 import type { CameraType } from '../types';
 import { createCamera } from '../services/localApi';
 import { scanForPII } from '../utils/privacy';
+import { getStoredInitials, normalizeInitials, storeInitials } from '../utils/initials';
 
 interface CompanionAppProps {
-  initials: string;
   onSwitchMode: () => void;
 }
 
@@ -22,7 +22,7 @@ interface DeviceOrientationEventWithRequest extends DeviceOrientationEvent {
   webkitCompassHeading?: number;
 }
 
-export default function CompanionApp({ initials, onSwitchMode }: CompanionAppProps) {
+export default function CompanionApp({ onSwitchMode }: CompanionAppProps) {
   const [stage, setStage] = useState<Stage>('locating');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +30,7 @@ export default function CompanionApp({ initials, onSwitchMode }: CompanionAppPro
   const [type, setType] = useState<CameraType>('cctv');
   const [direction, setDirection] = useState<number>(0);
   const [note, setNote] = useState('');
+  const [initials, setInitials] = useState(() => getStoredInitials());
   const compassHandlerRef = useRef<((e: DeviceOrientationEvent) => void) | null>(null);
 
   // Auto-fetch geolocation on mount.
@@ -110,9 +111,14 @@ export default function CompanionApp({ initials, onSwitchMode }: CompanionAppPro
       setError(`Note: ${violation}`);
       return;
     }
+    if (initials.trim() === '') {
+      setError('Your initials are required.');
+      return;
+    }
     setStage('saving');
     setError(null);
     try {
+      storeInitials(initials);
       await createCamera(
         {
           type,
@@ -121,7 +127,7 @@ export default function CompanionApp({ initials, onSwitchMode }: CompanionAppPro
           name: note.trim() || null,
           direction: direction,
         },
-        initials || null,
+        initials.trim() || null,
       );
       setStage('saved');
       setTimeout(() => {
@@ -144,14 +150,12 @@ export default function CompanionApp({ initials, onSwitchMode }: CompanionAppPro
           type="button"
           onClick={onSwitchMode}
           aria-label="Back to map"
-          className="p-2 hover:bg-blue-800 rounded-lg"
+          className="p-2 hover:bg-blue-800 rounded-lg transition-colors"
         >
           <ArrowLeft size={20} />
         </button>
         <h1 className="font-bold text-lg">Quick add</h1>
-        <span className="text-xs bg-blue-800 px-2 py-1 rounded" aria-label={`Signed in as ${initials || 'no initials'}`}>
-          {initials || '—'}
-        </span>
+        <span className="w-9" aria-hidden="true" />
       </header>
 
       <main className="flex-1 max-w-md mx-auto w-full p-4">
@@ -278,6 +282,21 @@ export default function CompanionApp({ initials, onSwitchMode }: CompanionAppPro
                 className="w-full border border-slate-300 rounded-lg py-2.5 px-3 focus:ring-2 focus:ring-blue-500"
               />
               <p className="mt-1 text-xs text-slate-500">No names or addresses please.</p>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 shadow">
+              <label htmlFor="qa-initials" className="block text-sm font-medium text-slate-700 mb-1">
+                Your initials
+              </label>
+              <input
+                id="qa-initials"
+                type="text"
+                value={initials}
+                onChange={(e) => setInitials(normalizeInitials(e.target.value))}
+                placeholder="e.g. NT"
+                maxLength={6}
+                className="w-full border border-slate-300 rounded-lg py-2.5 px-3 focus:ring-2 focus:ring-blue-500"
+              />
             </div>
 
             {error && (

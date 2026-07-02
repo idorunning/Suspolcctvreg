@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BarChart3, Crosshair, LogOut, Map as MapIcon, PanelLeftClose, PanelLeftOpen,
-  Settings as SettingsIcon, Smartphone, Video,
+  Settings as SettingsIcon, Smartphone,
 } from 'lucide-react';
 import type { AreaFilter, Camera } from './types';
-import Unlock from './components/Unlock';
+import ConnectFolder from './components/ConnectFolder';
 import Sidebar from './components/Sidebar';
 import MapComponent from './components/MapComponent';
 import AddCameraModal from './components/AddCameraModal';
 import OverviewPanel from './components/OverviewPanel';
-import LiveDashboard from './components/LiveDashboard';
 import SettingsPanel from './components/SettingsPanel';
 import CompanionApp from './components/CompanionApp';
 import {
+  bootFromState,
   createCamera,
   deleteCamera,
   listCameras,
@@ -23,8 +23,7 @@ import {
 import { forgetFolder } from './services/storage';
 import { watchForRemoteChanges } from './services/concurrency';
 import { reloadFromDisk } from './services/storage';
-import { bootFromState } from './services/localApi';
-import { APP_TITLE, CREATOR_CREDIT } from './copy';
+import { APP_TITLE, CREATOR_CREDIT, NAV } from './copy';
 import type { PossibleSite } from './components/PossibleSitesLayer';
 
 type Mode = 'registry' | 'companion';
@@ -32,8 +31,7 @@ type Mode = 'registry' | 'companion';
 type Draft = Partial<Camera> | null;
 
 export default function App() {
-  const [unlocked, setUnlocked] = useState(false);
-  const [initials, setInitials] = useState(() => localStorage.getItem('sussex_cctv_initials') || '');
+  const [connected, setConnected] = useState(false);
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [mode, setMode] = useState<Mode>('registry');
 
@@ -57,35 +55,33 @@ export default function App() {
   // Overlays
   const [showSettings, setShowSettings] = useState(false);
   const [showOverview, setShowOverview] = useState(false);
-  const [showLiveDashboard, setShowLiveDashboard] = useState(false);
   const [showPossibleSites, setShowPossibleSites] = useState(false);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [remoteChanged, setRemoteChanged] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Subscribe to local camera state once unlocked
+  // Subscribe to local camera state once connected
   useEffect(() => {
-    if (!unlocked) return;
+    if (!connected) return;
     setCameras(listCameras());
     const unsub = subscribe((next) => setCameras(next));
     return unsub;
-  }, [unlocked]);
+  }, [connected]);
 
   // Watch the data file for changes from teammates
   useEffect(() => {
-    if (!unlocked) return;
+    if (!connected) return;
     const stop = watchForRemoteChanges(() => setRemoteChanged(true));
     return stop;
-  }, [unlocked]);
+  }, [connected]);
 
-  const handleUnlocked = (label: string) => {
-    setInitials(label);
-    setUnlocked(true);
-  };
+  const handleConnected = useCallback(() => {
+    setConnected(true);
+  }, []);
 
-  const handleLock = useCallback(() => {
-    setUnlocked(false);
+  const handleDisconnect = useCallback(() => {
+    setConnected(false);
     setCameras([]);
     setSelectedCamera(null);
     setArea(null);
@@ -94,8 +90,8 @@ export default function App() {
 
   const handleForgetFolder = useCallback(async () => {
     await forgetFolder();
-    handleLock();
-  }, [handleLock]);
+    handleDisconnect();
+  }, [handleDisconnect]);
 
   const handleReload = useCallback(async () => {
     try {
@@ -108,14 +104,15 @@ export default function App() {
   }, []);
 
   const handleSaveCamera = useCallback(
-    async (data: Partial<Camera>) => {
+    async (data: Partial<Camera>, initialsValue: string) => {
       try {
+        const attributed = initialsValue.trim() || null;
         if (isEditingCamera && selectedCamera) {
-          const updated = await updateCamera(selectedCamera.id, data);
+          const updated = await updateCamera(selectedCamera.id, { ...data, lastEditedBy: attributed });
           setSelectedCamera(updated);
           setIsEditingCamera(false);
         } else {
-          await createCamera(data, initials || null);
+          await createCamera(data, attributed);
           setNewCameraLocation(null);
           setIsAddingCamera(false);
         }
@@ -126,7 +123,7 @@ export default function App() {
         throw e instanceof Error ? e : new Error(String(e));
       }
     },
-    [isEditingCamera, selectedCamera, initials],
+    [isEditingCamera, selectedCamera],
   );
 
   const handleDeleteCamera = useCallback(async () => {
@@ -188,10 +185,10 @@ export default function App() {
     };
   }, [draftOrigin, draftDirection, draftDistance, draftCameraData, isEditingCamera, selectedCamera]);
 
-  if (!unlocked) return <Unlock onUnlocked={handleUnlocked} />;
+  if (!connected) return <ConnectFolder onConnected={handleConnected} />;
 
   if (mode === 'companion') {
-    return <CompanionApp initials={initials} onSwitchMode={() => setMode('registry')} />;
+    return <CompanionApp onSwitchMode={() => setMode('registry')} />;
   }
 
   // Bridge for MapComponent's internal circle filter UI -> our area state
@@ -241,7 +238,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
               aria-label={isSidebarOpen ? 'Hide list' : 'Show list'}
             >
               {isSidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
@@ -273,7 +270,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setShowOverview(true)}
-              className="hidden sm:flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-indigo-200"
+              className="hidden sm:flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-indigo-200 transition-colors"
             >
               <BarChart3 size={14} />
               Overview
@@ -281,22 +278,9 @@ export default function App() {
 
             <button
               type="button"
-              onClick={() => setShowLiveDashboard(true)}
-              className="hidden sm:flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-emerald-200"
-              title="Public live feeds"
-            >
-              <Video size={14} className="animate-pulse" />
-              Live feeds
-              <span className="bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                {cameras.filter((c) => !!c.publicOutputUrl).length}
-              </span>
-            </button>
-
-            <button
-              type="button"
               onClick={() => setShowPossibleSites((v) => !v)}
               aria-pressed={showPossibleSites}
-              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border ${
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                 showPossibleSites
                   ? 'bg-orange-100 text-orange-800 border-orange-200'
                   : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
@@ -310,7 +294,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setMode('companion')}
-              className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow"
+              className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow transition-colors"
               title="Quick add"
             >
               <Smartphone size={14} />
@@ -321,17 +305,17 @@ export default function App() {
               type="button"
               onClick={() => setShowSettings(true)}
               aria-label="Settings"
-              className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
             >
               <SettingsIcon size={16} />
             </button>
 
             <button
               type="button"
-              onClick={handleLock}
-              aria-label="Lock app"
-              title="Lock app"
-              className="p-2 text-slate-500 hover:text-red-700 hover:bg-red-50 rounded-lg"
+              onClick={handleDisconnect}
+              aria-label={NAV.signOut}
+              title={NAV.signOut}
+              className="p-2 text-slate-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
             >
               <LogOut size={16} />
             </button>
@@ -442,25 +426,10 @@ export default function App() {
         />
       )}
 
-      {showLiveDashboard && (
-        <LiveDashboard
-          cameras={cameras}
-          onSelectOnMap={(cam) => {
-            setSelectedCamera(cam);
-            setMapCenter([cam.latitude, cam.longitude]);
-            setFocusTrigger((p) => p + 1);
-            setShowLiveDashboard(false);
-          }}
-          onClose={() => setShowLiveDashboard(false)}
-        />
-      )}
-
       {showSettings && (
         <SettingsPanel
-          initials={initials}
-          onChangeInitials={(next) => setInitials(next)}
           onClose={() => setShowSettings(false)}
-          onLock={handleForgetFolder}
+          onDisconnect={handleForgetFolder}
         />
       )}
 

@@ -49,7 +49,7 @@ export default function OverviewPanel({ cameras, usersCount, onClose }: Overview
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000] p-4 select-none animate-fadeIn">
-      <div className="bg-white rounded-2xl border border-slate-205 shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col">
         <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50/50">
           <div>
             <h2 className="text-xl font-bold text-slate-950 font-display">System Analytics</h2>
@@ -92,7 +92,7 @@ export default function OverviewPanel({ cameras, usersCount, onClose }: Overview
               </div>
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Privacy Standard</p>
-                <p className="text-2xl font-bold text-emerald-650 font-mono mt-0.5">100%</p>
+                <p className="text-2xl font-bold text-emerald-600 font-mono mt-0.5">100%</p>
               </div>
             </div>
           </div>

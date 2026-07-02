@@ -16,6 +16,7 @@ export interface Camera {
   fieldOfView?: number | null;
   viewDistance?: number | null;
   addedBy?: string | null; // free-form initials, informational only
+  lastEditedBy?: string | null; // free-form initials of whoever last amended this record, informational only
   createdAt: Timestamp;
   updatedAt: Timestamp;
   lastVerifiedAt?: Timestamp | null;
@@ -28,7 +29,7 @@ export interface AreaFilter {
   radiusM: number;
 }
 
-// Persisted, encrypted file shape.
+// Persisted plain-JSON file shape.
 export interface RegistryState {
   schemaVersion: 1;
   cameras: Camera[];
