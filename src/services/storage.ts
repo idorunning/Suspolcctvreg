@@ -1,9 +1,9 @@
 // Persists a FileSystemDirectoryHandle in IndexedDB and reads/writes the
-// encrypted data file inside that folder.
+// plain JSON data file inside that folder. Access control is the SharePoint /
+// OneDrive folder's own permissions — the tenant is already authenticated.
 
 import { openDB, type IDBPDatabase } from 'idb';
 import type { RegistryState } from '../types';
-import { encryptJson, decryptJson, type EncryptedBlob } from './crypto';
 
 const DATA_FILE = 'cctv-data.json';
 const DB_NAME = 'sussex-cctv-registry';
@@ -33,17 +33,9 @@ export class ConcurrencyError extends Error {
   }
 }
 
-export class WrongPasswordError extends Error {
-  constructor() {
-    super('Wrong password.');
-    this.name = 'WrongPasswordError';
-  }
-}
-
 let cachedFolder: FileSystemDirectoryHandle | null = null;
 let lastSeenMtime: number | null = null;
 let lastLoadedState: RegistryState | null = null;
-let lastPassword: string | null = null;
 
 export async function loadStoredFolder(): Promise<FileSystemDirectoryHandle | null> {
   if (cachedFolder) return cachedFolder;
@@ -88,7 +80,6 @@ export async function forgetFolder(): Promise<void> {
   cachedFolder = null;
   lastSeenMtime = null;
   lastLoadedState = null;
-  lastPassword = null;
 }
 
 async function getFile(): Promise<{ file: File; handle: FileSystemFileHandle } | null> {
@@ -119,59 +110,49 @@ function emptyState(): RegistryState {
   };
 }
 
-async function writeBlob(blob: EncryptedBlob): Promise<number> {
+async function writeState(state: RegistryState): Promise<number> {
   const folder = cachedFolder;
   if (!folder) throw new Error('No folder connected yet.');
   const handle = await folder.getFileHandle(DATA_FILE, { create: true });
   const writable = await handle.createWritable();
-  await writable.write(JSON.stringify(blob));
+  await writable.write(JSON.stringify(state, null, 2));
   await writable.close();
   const file = await handle.getFile();
   return file.lastModified;
 }
 
-export async function setupPassword(password: string): Promise<RegistryState> {
+export async function initRegistry(): Promise<RegistryState> {
   const folder = await loadStoredFolder();
   if (!folder) throw new Error('No folder connected yet.');
   if (!(await ensurePermission(folder))) throw new Error('Permission denied.');
   const state = emptyState();
-  const blob = await encryptJson(state, password);
-  lastSeenMtime = await writeBlob(blob);
+  lastSeenMtime = await writeState(state);
   lastLoadedState = state;
-  lastPassword = password;
   return state;
 }
 
-export async function unlock(password: string): Promise<RegistryState> {
+export async function loadRegistry(): Promise<RegistryState> {
   const folder = await loadStoredFolder();
   if (!folder) throw new Error('No folder connected yet.');
   if (!(await ensurePermission(folder))) throw new Error('Permission denied.');
   const found = await getFile();
   if (!found) throw new Error('Data file not found in the chosen folder.');
-  let blob: EncryptedBlob;
+  let state: RegistryState;
   try {
-    blob = JSON.parse(await found.file.text()) as EncryptedBlob;
+    state = JSON.parse(await found.file.text()) as RegistryState;
   } catch {
     throw new Error('Data file is not in the expected format.');
   }
-  try {
-    const state = await decryptJson<RegistryState>(blob, password);
-    lastSeenMtime = found.file.lastModified;
-    lastLoadedState = state;
-    lastPassword = password;
-    return state;
-  } catch {
-    throw new WrongPasswordError();
-  }
+  lastSeenMtime = found.file.lastModified;
+  lastLoadedState = state;
+  return state;
 }
 
 export async function reloadFromDisk(): Promise<RegistryState> {
-  if (!lastPassword) throw new Error('Not unlocked yet.');
-  return unlock(lastPassword);
+  return loadRegistry();
 }
 
 export async function save(state: RegistryState): Promise<void> {
-  if (!lastPassword) throw new Error('Not unlocked yet.');
   const found = await getFile();
   if (found && lastSeenMtime !== null && found.file.lastModified > lastSeenMtime) {
     throw new ConcurrencyError();
@@ -180,15 +161,8 @@ export async function save(state: RegistryState): Promise<void> {
     ...state,
     meta: { ...state.meta, updatedAt: new Date().toISOString() },
   };
-  const blob = await encryptJson(stamped, lastPassword);
-  lastSeenMtime = await writeBlob(blob);
+  lastSeenMtime = await writeState(stamped);
   lastLoadedState = stamped;
-}
-
-export async function changePassword(oldPassword: string, newPassword: string): Promise<void> {
-  const state = await unlock(oldPassword);
-  lastPassword = newPassword;
-  await save(state);
 }
 
 export function currentMtime(): number | null {

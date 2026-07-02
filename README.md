@@ -4,9 +4,10 @@ A small-team camera registry for use on a shared SharePoint / OneDrive folder.
 Created by **Nathan Tracey · Sussex Police · nathan.tracey@sussex.police.uk**.
 
 The app is a **single self-contained HTML file**. You drop it in a SharePoint
-folder, share that folder with a handful of trusted colleagues, set one
-shared password, and everyone with the password can read and edit the same
-data — much like a password-protected Excel workbook.
+folder and share that folder with a handful of trusted colleagues. There's no
+separate sign-in — the folder's own SharePoint/OneDrive permissions (inside
+the already-authenticated Sussex Police M365 tenant) are the access control,
+much like a shared Excel workbook in a permissioned folder.
 
 ## What it does
 
@@ -23,24 +24,24 @@ data — much like a password-protected Excel workbook.
   (Tesco / Asda / Sainsbury's / Morrisons / Aldi / Lidl / Co-op / Iceland /
   Waitrose / M&S) and already-mapped public CCTV, fetched live from
   OpenStreetMap.
-- **Live feeds dashboard** — opens public webcam / traffic feeds in a new
-  browser tab (not embedded, to avoid the broken-iframe behaviour caused by
-  third-party `X-Frame-Options`).
 - CSV export of all cameras, area-only export when a circle is active.
 
 ## How it works
 
-- All data lives in **one encrypted JSON file** (`cctv-data.json`) in the
-  OneDrive / SharePoint folder you choose. The file is encrypted with the
-  shared password using AES-GCM-256, derived via PBKDF2-SHA256
-  (210 000 iterations).
+- All data lives in **one plain JSON file** (`cctv-data.json`) in the
+  OneDrive / SharePoint folder you choose — human-readable, no encryption.
+  Access control is the folder's own SharePoint/OneDrive permissions, not
+  anything the app enforces.
 - The app reads and writes that file using the browser's File System Access
   API. Chrome / Edge on desktop and Android Chrome are supported. iOS Safari
   is not.
 - OneDrive sync distributes the file to every team member's machine.
 - Concurrent edits are not auto-merged. The app detects when the file has
   changed under it and prompts you to reload before saving — exactly like
-  password-protected Excel.
+  a shared Excel workbook.
+- Attribution is per-action, not per-session: whoever adds or edits a camera
+  types their initials right there in that form (pre-filled from last time).
+  Just browsing or reviewing the map never asks for a name.
 
 ## Set it up
 
@@ -56,10 +57,9 @@ data — much like a password-protected Excel workbook.
 4. Each person opens the file via OneDrive sync (it ends up in
    `…/OneDrive - Sussex Police/CCTV Registry/`), double-clicking it to open
    in Chrome or Edge.
-5. First user: chooses the folder, sets the shared password.
-6. Other users: choose the same folder, enter the shared password.
-7. Tell colleagues the password securely (Teams DM, in person — not in the
-   same file).
+5. Everyone chooses the same folder when the app asks — that's the whole
+   setup. The first person to connect creates the data file; everyone else
+   just connects to the existing one.
 
 ### If SharePoint blocks `.html` upload
 
@@ -82,19 +82,22 @@ Some Microsoft 365 tenants ban uploading `.html` files. Workarounds:
 - **Possible sites**: toggle the "Possible sites" button in the header to
   show petrol stations, supermarkets and existing public CCTV from OSM.
   Click any of them to pre-fill the Add Camera form.
-- **Lock the app**: the lock button in the top-right clears the password
-  from memory.
+- **Disconnect**: the button in the top-right returns you to the folder-pick
+  screen — useful for switching to a different registry folder.
 
 ## Limits and risks (please read)
 
-- **No password recovery.** If the password is lost, the data is
-  unrecoverable. Use **Settings → Download CSV backup** regularly.
+- **No app-level access control.** Anyone with access to the SharePoint /
+  OneDrive folder can read and edit the data — the folder's own permissions
+  are the only gate. Manage who can access that folder carefully.
 - **Concurrent edits.** Two people saving at the same time will produce a
   OneDrive conflict copy. The app warns the second saver, but accept that
   some overwrite risk exists.
-- **No per-officer audit.** Everyone shares the password. Camera entries
-  show whoever's "initials" were entered, but those are informational, not
+- **No per-officer audit.** Camera entries show whoever's "initials" were
+  typed in at the time, but those are self-reported and informational, not
   authentication.
+- Use **Settings → Download CSV backup** regularly in case the data file is
+  ever lost or corrupted.
 - **iOS Safari is not supported.** Use Chrome / Edge on a laptop or Android.
 - **Map tiles and Overpass POIs come from public services**
   (OpenStreetMap, Esri, Nominatim, Overpass). Each request goes out from
@@ -115,6 +118,12 @@ features are no longer present and would need a backend to exist:
 - Per-officer accounts (LDAP), audit log, bulk officer invites
 - 3-day temporary access windows
 - Server-enforced role-based access control
+
+A later revision of this same single-file app also dropped its own
+shared-password / AES-encryption layer and the standalone Live Feeds
+dashboard, since the app only ever runs inside the already-authenticated
+Sussex Police M365 tenant and folder permissions were doing the real
+access-control work anyway.
 
 ## Credits
 

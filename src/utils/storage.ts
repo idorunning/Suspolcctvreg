@@ -14,6 +14,7 @@ const COLUMNS: (keyof Camera)[] = [
   'fieldOfView',
   'viewDistance',
   'addedBy',
+  'lastEditedBy',
   'createdAt',
   'updatedAt',
   'lastVerifiedAt',

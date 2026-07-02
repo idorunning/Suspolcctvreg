@@ -1,6 +1,6 @@
 // In-memory CRUD against the loaded RegistryState, with save-after-mutate.
 // Exposes the same shape components used previously, but talks to the local
-// encrypted JSON in the user's OneDrive folder.
+// plain-JSON file in the user's OneDrive folder.
 
 import type { Camera, RegistryState } from '../types';
 import { getLastLoadedState, save } from './storage';

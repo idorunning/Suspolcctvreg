@@ -604,14 +604,14 @@ export default function MapComponent({
             <div className="space-y-4 pt-2 border-t border-slate-800">
               {/* Map base layer selector */}
               <div className="space-y-1.5">
-                <span className="text-[9px] font-bold text-slate-450 uppercase tracking-wider block">Base Map Type</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Base Map Type</span>
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     onClick={() => setMapLayer('road')}
                     className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                       mapLayer === 'road'
                         ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/10'
-                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-305 border-slate-700/60'
+                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-300 border-slate-700/60'
                     }`}
                     type="button"
                   >
@@ -623,7 +623,7 @@ export default function MapComponent({
                     className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                       mapLayer === 'satellite'
                         ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/10'
-                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-305 border-slate-700/60'
+                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-300 border-slate-700/60'
                     }`}
                     type="button"
                   >
@@ -635,7 +635,7 @@ export default function MapComponent({
                     className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                       mapLayer === 'plain'
                         ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/10'
-                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-305 border-slate-700/60'
+                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-300 border-slate-700/60'
                     }`}
                     type="button"
                   >
@@ -647,7 +647,7 @@ export default function MapComponent({
                     className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                       mapLayer === 'humanitarian'
                         ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/10'
-                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-305 border-slate-700/60'
+                        : 'bg-slate-800/85 hover:bg-slate-800 text-slate-300 border-slate-700/60'
                     }`}
                     type="button"
                   >
@@ -659,7 +659,7 @@ export default function MapComponent({
 
               {/* Visible Camera Types (Map Only) */}
               <div className="space-y-1.5 pt-2 border-t border-slate-800">
-                <span className="text-[9px] font-bold text-slate-450 uppercase tracking-wider block">Visible Camera Types</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Visible Camera Types</span>
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     onClick={() => toggleMapFilter('cctv')}
@@ -670,19 +670,19 @@ export default function MapComponent({
                     }`}
                     type="button"
                   >
-                    <Cctv size={11} className={mapFilters.cctv ? 'text-orange-450' : 'text-slate-600'} />
+                    <Cctv size={11} className={mapFilters.cctv ? 'text-orange-400' : 'text-slate-600'} />
                     CCTV
                   </button>
                   <button
                     onClick={() => toggleMapFilter('police_council')}
                     className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[10px] font-bold transition-all cursor-pointer ${
                       mapFilters.police_council
-                        ? 'bg-blue-995/43 text-blue-400 border-blue-500/30'
+                        ? 'bg-blue-950/40 text-blue-400 border-blue-500/30'
                         : 'bg-slate-800/30 text-slate-500 border-slate-800 line-through opacity-40 hover:opacity-90'
                     }`}
                     type="button"
                   >
-                    <Shield size={11} fill={mapFilters.police_council ? "currentColor" : "none"} className={mapFilters.police_council ? 'text-blue-450' : 'text-slate-600'} />
+                    <Shield size={11} fill={mapFilters.police_council ? "currentColor" : "none"} className={mapFilters.police_council ? 'text-blue-400' : 'text-slate-600'} />
                     Police
                   </button>
                   <button
@@ -694,7 +694,7 @@ export default function MapComponent({
                     }`}
                     type="button"
                   >
-                    <Fuel size={11} className={mapFilters.pfs ? 'text-rose-450' : 'text-slate-600'} />
+                    <Fuel size={11} className={mapFilters.pfs ? 'text-rose-400' : 'text-slate-600'} />
                     PFS
                   </button>
                   <button
@@ -706,7 +706,7 @@ export default function MapComponent({
                     }`}
                     type="button"
                   >
-                    <HelpCircle size={11} className={mapFilters.other ? 'text-slate-350' : 'text-slate-600'} />
+                    <HelpCircle size={11} className={mapFilters.other ? 'text-slate-300' : 'text-slate-600'} />
                     Other
                   </button>
                 </div>
@@ -714,13 +714,13 @@ export default function MapComponent({
 
               {/* Circle filter area */}
               <div className="space-y-2 pt-2 border-t border-slate-800">
-                <span className="text-[9px] font-bold text-slate-450 uppercase tracking-wider block">Map area search</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Map area search</span>
                 
                 {circleFilter ? (
                   <div className="bg-slate-800/40 rounded-xl p-2.5 border border-slate-800 space-y-2.5">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="text-[8px] font-bold text-slate-450 uppercase tracking-wider block">Boundary Range</span>
+                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Boundary Range</span>
                         <p className="text-[11px] font-bold text-slate-200 mt-0.5">
                           {circleFilter.radius >= 1000 ? `${(circleFilter.radius / 1000).toFixed(1)} km` : `${circleFilter.radius}m`} radius
                         </p>
@@ -731,7 +731,7 @@ export default function MapComponent({
                     </div>
 
                     <div className="space-y-1">
-                      <div className="flex justify-between text-[8px] text-slate-450 font-bold tracking-wider uppercase">
+                      <div className="flex justify-between text-[8px] text-slate-400 font-bold tracking-wider uppercase">
                         <span>100m</span>
                         <span>Drag range slider</span>
                         <span>5km</span>
@@ -769,7 +769,7 @@ export default function MapComponent({
                         onClick={() => {
                           if (onCircleFilterChange) onCircleFilterChange(null);
                         }}
-                        className="p-1 px-2 border border-slate-700 hover:bg-slate-800 hover:text-red-400 rounded-lg text-slate-350 text-[10px] transition-colors cursor-pointer font-bold"
+                        className="p-1 px-2 border border-slate-700 hover:bg-slate-800 hover:text-red-400 rounded-lg text-slate-300 text-[10px] transition-colors cursor-pointer font-bold"
                         title="Clear area filter"
                         type="button"
                       >
@@ -787,7 +787,7 @@ export default function MapComponent({
                       }}
                       className={`w-full flex items-center justify-center gap-1.5 font-bold py-2 px-3 rounded-lg text-xs transition-all tracking-wide cursor-pointer select-none ${
                         isDrawingCircle
-                          ? 'bg-amber-950/50 text-amber-400 border border-amber-550 animate-pulse'
+                          ? 'bg-amber-950/50 text-amber-400 border border-amber-500 animate-pulse'
                           : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md border-none'
                       }`}
                       type="button"
@@ -796,7 +796,7 @@ export default function MapComponent({
                       {isDrawingCircle ? 'Click on map...' : 'Filter Area by Circle'}
                     </button>
                     {!isDrawingCircle && (
-                      <p className="text-[9px] text-slate-450 italic text-center leading-normal">
+                      <p className="text-[9px] text-slate-400 italic text-center leading-normal">
                         Click to draw a circle over the map and filter cameras instantly.
                       </p>
                     )}

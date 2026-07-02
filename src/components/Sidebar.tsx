@@ -73,7 +73,7 @@ export default function Sidebar({
       )
         return false;
       if (term) {
-        const hay = [c.name, c.address, c.policeReferenceNumber, c.addedBy]
+        const hay = [c.name, c.address, c.policeReferenceNumber, c.addedBy, c.lastEditedBy]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
@@ -117,7 +117,7 @@ export default function Sidebar({
         <button
           type="button"
           onClick={onAddCameraClick}
-          className="w-full bg-blue-700 hover:bg-blue-800 text-white font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2"
+          className="w-full bg-blue-700 hover:bg-blue-800 text-white font-semibold py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors"
         >
           <Plus size={16} aria-hidden="true" />
           Add a camera
@@ -146,7 +146,7 @@ export default function Sidebar({
             <button
               type="submit"
               disabled={isSearchingLocation}
-              className="px-3 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-sm font-medium disabled:opacity-60"
+              className="px-3 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-sm font-medium disabled:opacity-60 transition-colors"
             >
               {isSearchingLocation ? (
                 <Loader2 size={14} className="animate-spin" />
@@ -169,7 +169,7 @@ export default function Sidebar({
               type="button"
               onClick={onClearArea}
               aria-label="Clear area filter"
-              className="text-blue-800 hover:bg-blue-100 p-1 rounded"
+              className="text-blue-800 hover:bg-blue-100 p-1 rounded transition-colors"
             >
               <X size={14} />
             </button>
@@ -181,7 +181,7 @@ export default function Sidebar({
             type="button"
             onClick={handleExportArea}
             disabled={filtered.length === 0}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-semibold py-2 rounded-lg flex items-center justify-center gap-1"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-sm font-semibold py-2 rounded-lg flex items-center justify-center gap-1 transition-colors"
           >
             <Download size={14} aria-hidden="true" />
             Export this area (CSV)
@@ -239,7 +239,7 @@ export default function Sidebar({
                     type="button"
                     onClick={() => onSelectCamera(c)}
                     aria-current={selected ? 'true' : undefined}
-                    className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 border ${
+                    className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 border transition-colors ${
                       selected
                         ? 'bg-blue-50 border-blue-300'
                         : 'border-transparent hover:bg-slate-50'
@@ -272,7 +272,7 @@ export default function Sidebar({
         <button
           type="button"
           onClick={handleExportAll}
-          className="w-full text-sm bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 font-medium py-2 rounded-lg flex items-center justify-center gap-1.5"
+          className="w-full text-sm bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 font-medium py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
         >
           <Download size={14} aria-hidden="true" />
           Export all ({cameras.length})
