@@ -246,7 +246,8 @@ export default function CCTVMap(props: Props) {
           <LocateFixed />
         </button>
         <button
-          aria-label="Toggle approximate camera coverage"
+          aria-label="Toggle camera POV / estimated coverage"
+          title="Camera POV — estimated direction and field of view"
           aria-pressed={showCoverage}
           onClick={() => setShowCoverage((v) => !v)}
         >

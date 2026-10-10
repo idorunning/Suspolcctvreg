@@ -1,3 +1,12 @@
+import {
+  login as accountLogin,
+  session,
+  publicAccounts,
+  accountRoutes,
+  publicUser,
+  canManage,
+  log,
+} from "./accounts.mjs";
 import { validateCamera, sanitiseJPEG } from "./validation.mjs";
 const enc = new TextEncoder();
 const hex = (b) =>
@@ -51,85 +60,7 @@ async function payload(req, max = 550000) {
   }
   return JSON.parse(new TextDecoder().decode(buffer));
 }
-async function login(req, env) {
-  if (!env.AUTH_CREDENTIAL || !env.RATE_SECRET)
-    return json({ error: "Test access has not been configured." }, 503);
-  const body = await payload(req, 2048);
-  if (typeof body.password !== "string" || body.password.length > 200)
-    return json({ error: "Check the password." }, 400);
-  const now = Date.now(),
-    window = Math.floor(now / 900000);
-  const key = await hash(
-    env.RATE_SECRET +
-      "|" +
-      (req.headers.get("CF-Connecting-IP") || "local") +
-      "|" +
-      window,
-  );
-  const counter = await env.DB.prepare(
-    "INSERT INTO login_limits (key,attempts,expires) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=attempts+1 RETURNING attempts",
-  )
-    .bind(key, now + 900000)
-    .first();
-  if (counter.attempts > 8)
-    return json({ error: "Too many attempts. Try again in 15 minutes." }, 429, {
-      "Retry-After": "900",
-    });
-  const credential = JSON.parse(env.AUTH_CREDENTIAL);
-  const base = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(body.password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const derived = hex(
-    await crypto.subtle.deriveBits(
-      {
-        name: "PBKDF2",
-        salt: enc.encode(credential.salt),
-        iterations: 100000,
-        hash: "SHA-256",
-      },
-      base,
-      256,
-    ),
-  );
-  let different = derived.length ^ credential.hash.length;
-  for (let i = 0; i < derived.length; i++)
-    different |= derived.charCodeAt(i) ^ credential.hash.charCodeAt(i);
-  if (different)
-    return json({ error: "That password was not recognised." }, 401);
-  const token = random(),
-    csrf = random();
-  await env.DB.prepare("INSERT INTO sessions VALUES (?,?,?,?)")
-    .bind(await hash(token), csrf, now + 8 * 3600000, now)
-    .run();
-  return json({ csrf }, 200, { "Set-Cookie": cookie(token, 8 * 3600) });
-}
-async function session(req, env) {
-  const token = req.headers
-    .get("Cookie")
-    ?.match(/(?:^|;\s*)__Host-cctv=([a-f0-9]{64})(?:;|$)/)?.[1];
-  if (!token) return null;
-  const key = await hash(token);
-  const s = await env.DB.prepare(
-    "SELECT * FROM sessions WHERE token_hash=? AND expires>? AND last_seen>?",
-  )
-    .bind(key, Date.now(), Date.now() - 30 * 60000)
-    .first();
-  if (s)
-    await env.DB.prepare("UPDATE sessions SET last_seen=? WHERE token_hash=?")
-      .bind(Date.now(), key)
-      .run();
-  return s;
-}
-const audit = (env, action, id) =>
-  env.DB.prepare("INSERT INTO audit(action,camera_id,at) VALUES (?,?,?)").bind(
-    action,
-    id,
-    Date.now(),
-  );
+const audit = (env, action, id) => log(env, action, env.ACTOR || null, id);
 async function externalLimit(env, service, windowMs) {
   const now = Date.now(),
     key = service + "-" + Math.floor(now / windowMs);
@@ -271,7 +202,7 @@ async function route(req) {
     duration: r.duration,
   });
 }
-export default {
+const app = {
   async fetch(req, env) {
     try {
       const u = new URL(req.url),
@@ -299,21 +230,34 @@ export default {
       if (req.method !== "GET" && !sameOrigin(req))
         return json({ error: "Request origin not allowed." }, 403);
       if (path === "/api/login" && req.method === "POST")
-        return await login(req, env);
+        return await accountLogin(req, env, json, payload);
+      const publicResult = await publicAccounts(req, env, path, json, payload);
+      if (publicResult) return publicResult;
       const s = await session(req, env);
       if (!s)
         return json({ error: "Your session has ended. Sign in again." }, 401, {
           "Set-Cookie": cookie("", 0),
         });
+      env.ACTOR = s.user_id;
       if (req.method !== "GET" && req.headers.get("X-CSRF-Token") !== s.csrf)
         return json({ error: "Refresh the page and try again." }, 403);
       if (path === "/api/session" && req.method === "GET")
         return json({
           csrf: s.csrf,
+          user: publicUser(s),
           mode: "test",
           mapProvider: "OpenStreetMap",
           routeProvider: "OSRM demo",
         });
+      const accountResult = await accountRoutes(
+        req,
+        env,
+        path,
+        s,
+        json,
+        payload,
+      );
+      if (accountResult) return accountResult;
       if (path === "/api/logout" && req.method === "POST") {
         await env.DB.prepare("DELETE FROM sessions WHERE token_hash=?")
           .bind(s.token_hash)
@@ -344,6 +288,107 @@ export default {
         ).all();
         return json({ cameras: result.results.map((r) => JSON.parse(r.data)) });
       }
+      if (path === "/api/events" && req.method === "POST") {
+        const b = await payload(req, 1024);
+        if (
+          ![
+            "route.cleared",
+            "route.traced",
+            "export.csv",
+            "export.email-draft",
+            "camera.pov",
+          ].includes(b.action)
+        )
+          return json({ error: "Invalid event." }, 400);
+        await audit(env, b.action, null).run();
+        return json({ ok: true });
+      }
+      const verification = path.match(
+        /^\/api\/cameras\/([a-zA-Z0-9_-]{1,64})\/verify$/,
+      );
+      if (
+        (verification || path === "/api/cameras/bulk") &&
+        req.method === "POST"
+      ) {
+        const b = await payload(req, 16000),
+          bulk = !verification;
+        if (bulk && s.role !== "webmaster")
+          return json(
+            { error: "Web master access required for bulk actions." },
+            403,
+          );
+        if (b.confirmed !== true)
+          return json({ error: "Confirm the selected camera action." }, 400);
+        const action = bulk ? b.action : "verify";
+        if (!["verify", "unverify", "delete", "retention"].includes(action))
+          return json({ error: "Invalid bulk action." }, 400);
+        if (
+          action === "retention" &&
+          ![null, 1, 3, 7, 14, 28, 30, 60, 90].includes(b.retentionDays)
+        )
+          return json({ error: "Choose a valid retention period." }, 400);
+        const items = bulk
+          ? b.items
+          : [{ id: verification[1], revision: b.revision }];
+        if (
+          !Array.isArray(items) ||
+          !items.length ||
+          items.length > 50 ||
+          new Set(items.map((x) => x.id)).size !== items.length
+        )
+          return json({ error: "Select 1–50 distinct cameras." }, 400);
+        const statements = [];
+        for (const item of items) {
+          if (
+            !/^[a-zA-Z0-9_-]{1,64}$/.test(item.id) ||
+            !Number.isInteger(item.revision)
+          )
+            return json({ error: "Invalid camera selection." }, 400);
+          const row = await env.DB.prepare(
+            "SELECT data,revision FROM cameras WHERE id=?",
+          )
+            .bind(item.id)
+            .first();
+          if (!row || row.revision !== item.revision)
+            return json(
+              { error: "A camera changed. Refresh before trying again." },
+              409,
+            );
+          const c = JSON.parse(row.data),
+            now = new Date().toISOString();
+          c.revision++;
+          c.updatedAt = now;
+          if (action === "retention") {
+            c.retentionDays = b.retentionDays;
+            c.verifiedAt = null;
+          } else c.verifiedAt = action === "verify" ? now : null;
+          statements.push(
+            action === "delete"
+              ? env.DB.prepare(
+                  "DELETE FROM cameras WHERE id=? AND revision=?",
+                ).bind(item.id, item.revision)
+              : env.DB.prepare(
+                  "UPDATE cameras SET data=?,revision=? WHERE id=? AND revision=?",
+                ).bind(JSON.stringify(c), c.revision, item.id, item.revision),
+          );
+          statements.push(
+            env.DB.prepare(
+              "SELECT CASE WHEN changes()=0 THEN json('conflict') ELSE 1 END",
+            ),
+          );
+          if (action === "delete")
+            statements.push(
+              env.DB.prepare("DELETE FROM photos WHERE camera_id=?").bind(
+                item.id,
+              ),
+            );
+          statements.push(
+            audit(env, (bulk ? "bulk." : "camera.") + action, item.id),
+          );
+        }
+        await env.DB.batch(statements);
+        return json({ ok: true, count: items.length });
+      }
       const match = path.match(
         /^\/api\/cameras\/([a-zA-Z0-9_-]{1,64})(\/photo)?$/,
       );
@@ -366,6 +411,14 @@ export default {
         (path === "/api/cameras" && req.method === "POST") ||
         (match && !match[2] && req.method === "PUT")
       ) {
+        if (match && !canManage(s.role))
+          return json(
+            {
+              error:
+                "Supervisor or web master access required to edit cameras.",
+            },
+            403,
+          );
         const body = await payload(req);
         const data = validateCamera(body);
         let old = null;
@@ -392,7 +445,7 @@ export default {
           revision,
           createdAt: old?.createdAt || now,
           updatedAt: now,
-          verifiedAt: now,
+          verifiedAt: old ? null : now,
           hasPhoto: body.photo
             ? true
             : body.removePhoto
@@ -440,6 +493,11 @@ export default {
         return json({ camera: record }, old ? 200 : 201);
       }
       if (match && !match[2] && req.method === "DELETE") {
+        if (s.role !== "webmaster")
+          return json(
+            { error: "Web master access required to remove cameras." },
+            403,
+          );
         const b = await payload(req, 2048);
         if (!Number.isInteger(b.revision))
           return json({ error: "Camera revision required." }, 400);
@@ -489,4 +547,50 @@ export default {
       env.DB.prepare("DELETE FROM audit WHERE at<?").bind(now - 14 * 86400000),
     ]);
   },
+};
+
+export default {
+  async fetch(req, env) {
+    const scoped = { ...env, ACTOR: null };
+    const response = await app.fetch(req, scoped);
+    const path = new URL(req.url).pathname;
+    if (path.startsWith("/api/")) {
+      const resource = [
+        "login",
+        "register",
+        "recover",
+        "session",
+        "logout",
+        "account",
+        "users",
+        "invitations",
+        "audit",
+        "cameras",
+        "route",
+        "places",
+        "events",
+      ].includes(path.split("/")[2])
+        ? path.split("/")[2]
+        : "unknown";
+      try {
+        await log(
+          scoped,
+          `request.${req.method}.${resource}`,
+          scoped.ACTOR,
+          null,
+          response.status,
+        ).run();
+      } catch {
+        return json(
+          {
+            error:
+              "Audit recording is unavailable. Please contact the web master before continuing.",
+          },
+          503,
+        );
+      }
+    }
+    return response;
+  },
+  scheduled: app.scheduled,
 };

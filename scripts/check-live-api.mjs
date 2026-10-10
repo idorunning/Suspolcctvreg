@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 const base = "https://suspol-cctv-test.ntracey.workers.dev",
-  access = JSON.parse(fs.readFileSync("private/access.json", "utf8"));
+  access = JSON.parse(fs.readFileSync("private/admin-access.json", "utf8"));
 const results = [];
 let token = "",
   csrf = "",
@@ -30,12 +30,12 @@ try {
   r = await req(
     "/login",
     "POST",
-    { password: access.password },
+    { username: access.username, password: access.password },
     { Origin: "https://example.invalid" },
   );
   assert.equal(r.status, 403);
   result("Cross-origin login rejected");
-  r = await req("/login", "POST", { password: access.password });
+  r = await req("/login", "POST", { username: access.username, password: access.password });
   assert.equal(r.status, 200);
   const cookie = r.headers.get("set-cookie");
   assert.ok(
