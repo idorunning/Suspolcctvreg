@@ -67,6 +67,7 @@ Public map/routing services have no service guarantee. Account aliases are not f
 ## Accounts, invitations and route controls
 
 - Clear route removes the line, waypoints and results and invalidates pending routing responses. New route also starts point selection. Both work for road routes and manual traces.
+- All camera POVs are on by default. The labelled map toggle hides or shows every displayed camera’s estimated cone at any zoom; geometry stays anchored to the camera and scales with the map. Cones use saved direction, viewing angle and range, and cannot account for obstructions or confirm footage.
 - Camera POV opens the selected camera at close zoom and shows its estimated view cone. It is not a live feed or Google Street View. Direction, field of view, distance and reference photographs remain available.
 - **User:** read maps and camera details, export, map routes, add cameras, verify cameras, change own password and recover with a saved recovery code.
 - **Supervisor:** all User permissions, edit cameras/details and issue User invitations. No account removal, role promotion, bulk changes or log access.

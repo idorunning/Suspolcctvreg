@@ -2134,3 +2134,24 @@ button.primary,
 .account-form{display:grid;gap:16px}.account-form label,.admin-content>label,.invite-box label{display:grid;gap:8px}.account-form input,.admin-content select,.invite-box input{padding:12px;border:1px solid #b9c8d6;border-radius:8px;max-width:100%;min-width:0}.secret-code{display:block;overflow-wrap:anywhere;background:#e7eef4;padding:16px;border-radius:8px;user-select:all}.admin-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}.admin-row{display:flex;align-items:center;flex-wrap:wrap;gap:12px;border-bottom:1px solid #dde5ec;padding:14px 0}.admin-row>span{flex:1;min-width:140px}.admin-row small{display:block;font-size:11px;overflow-wrap:anywhere;color:#526578}.invite-box{display:grid;margin:16px 0}.invite-box input{width:100%}.bulk-list{max-height:280px;overflow:auto;border:1px solid #dde5ec;border-radius:8px;margin:14px 0}.bulk-list label{display:flex;gap:10px;align-items:center;padding:10px;border-bottom:1px solid #e5ebf1}.audit-table{overflow:auto;max-height:420px;margin-top:14px}.audit-table table{border-collapse:collapse;font-size:12px}.audit-table td,.audit-table th{padding:8px;border-bottom:1px solid #dde5ec;text-align:left;max-width:230px;overflow-wrap:anywhere}.admin-content .confirm-row{display:flex;gap:10px;margin:16px 0}.admin-content .button-row{flex-wrap:wrap}.modal-foot{flex-wrap:wrap}
 
 [hidden]{display:none!important}
+
+.pov-toggle {
+  position: absolute;
+  z-index: 450;
+  right: 22px;
+  bottom: 120px;
+  min-height: 44px;
+  padding: 10px 12px;
+  gap: 8px;
+  background: white;
+  color: #31506b;
+  border: 1px solid #dde5eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px #20344914;
+  font-size: 12px;
+}
+.pov-toggle[aria-pressed="true"] { background: #e9f4f2; color: #087f80; }
+.pov-toggle:focus-visible { outline: 3px solid #146be9; outline-offset: 3px; }
+@media (max-width: 760px) {
+  .pov-toggle { right: 15px; bottom: 116px; }
+}

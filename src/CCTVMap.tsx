@@ -28,6 +28,7 @@ function wedge(c: CameraRecord): L.LatLngExpression[] {
 interface Props {
   cameras: CameraRecord[];
   selected: string | null;
+  povCamera: string | null;
   onSelect: (c: CameraRecord) => void;
   onPoint: (p: Point) => void;
   picking: string | null;
@@ -49,7 +50,10 @@ export default function CCTVMap(props: Props) {
   refs.current = props;
   const [zoom, setZoom] = useState(15),
     [tileError, setTileError] = useState(false),
-    [showCoverage, setShowCoverage] = useState(false);
+    [showCoverage, setShowCoverage] = useState(true);
+  useEffect(() => {
+    if (props.povCamera) setShowCoverage(true);
+  }, [props.povCamera]);
   useEffect(() => {
     if (!el.current) return;
     const m = L.map(el.current, {
@@ -144,16 +148,16 @@ export default function CCTVMap(props: Props) {
     if (!g) return;
     g.clearLayers();
     props.cameras
-      .filter((c) => c.id === props.selected || (showCoverage && zoom >= 17))
+      .filter(() => showCoverage)
       .forEach((c) =>
         L.polygon(wedge(c), {
           color: c.kind === "council" ? "#185b92" : "#087f80",
-          fillOpacity: 0.15,
-          weight: 1,
+          fillOpacity: c.id === props.selected ? 0.3 : 0.18,
+          weight: c.id === props.selected ? 2 : 1,
           interactive: false,
         }).addTo(g),
       );
-  }, [props.cameras, props.selected, showCoverage, zoom]);
+  }, [props.cameras, props.selected, showCoverage]);
   useEffect(() => {
     const g = routeLayer.current,
       m = map.current;
@@ -245,15 +249,16 @@ export default function CCTVMap(props: Props) {
         <button aria-label="Find my location" onClick={props.onLocate}>
           <LocateFixed />
         </button>
-        <button
-          aria-label="Toggle camera POV / estimated coverage"
-          title="Camera POV — estimated direction and field of view"
-          aria-pressed={showCoverage}
-          onClick={() => setShowCoverage((v) => !v)}
-        >
-          <Layers />
-        </button>
       </div>
+      <button
+        className="pov-toggle"
+        aria-label="Show all camera POVs"
+        title="Show or hide estimated camera fields of view"
+        aria-pressed={showCoverage}
+        onClick={() => setShowCoverage((v) => !v)}
+      >
+        <Layers size={17} /> All POVs <strong>{showCoverage ? "On" : "Off"}</strong>
+      </button>
       <div className="map-legend">
         <span>
           <i className="legend-dot business" />
@@ -269,9 +274,7 @@ export default function CCTVMap(props: Props) {
       </div>
       {showCoverage && (
         <div className="coverage-note">
-          {zoom < 17
-            ? "Zoom in to see approximate view cones."
-            : "View cones are estimates, not confirmed footage coverage."}
+          Estimated views • direction, angle and range. Obstructions may limit coverage.
         </div>
       )}
     </div>

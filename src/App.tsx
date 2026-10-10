@@ -1161,6 +1161,7 @@ export default function App() {
             <CCTVMap
               cameras={displayed}
               selected={selectedId || pov}
+              povCamera={pov}
               onSelect={select}
               onPoint={pointChosen}
               picking={pickingText}
