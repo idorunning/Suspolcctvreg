@@ -13,6 +13,7 @@ export const publicUser = (u) => ({
   id: u.user_id || u.id,
   username: u.username,
   role: u.role,
+  emailVerified: !!u.email_verified_at,
 });
 export const canManage = (role) =>
   role === "supervisor" || role === "webmaster";
@@ -21,6 +22,16 @@ export const validRole = (role) =>
 export const canInvite = (actor, role) =>
   validRole(role) &&
   (actor === "webmaster" || (actor === "supervisor" && role === "user"));
+export function validPoliceEmail(value) {
+  if (typeof value !== "string" || value.length > 254) return false;
+  const parts = value.split("@");
+  return (
+    parts.length === 2 &&
+    parts[0].length <= 64 &&
+    /^[a-z0-9]+(?:[._+\-][a-z0-9]+)*$/i.test(parts[0]) &&
+    /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+police\.uk$/i.test(parts[1])
+  );
+}
 export function checkPassword(p) {
   if (typeof p !== "string" || p.length < 14 || p.length > 200)
     throw Error("Use a password of 14–200 characters.");
@@ -88,16 +99,21 @@ export async function login(req, env, json, payload) {
   const b = await payload(req, 4096),
     username =
       typeof b.username === "string" ? b.username.toLowerCase().trim() : "";
-  const u = await env.DB.prepare(
-    "SELECT * FROM users WHERE username=? AND active=1",
-  )
-    .bind(username)
-    .first();
+  const u = validPoliceEmail(username)
+    ? await env.DB.prepare("SELECT * FROM users WHERE username=? AND active=1")
+        .bind(username)
+        .first()
+    : null;
   const ok = await verify(b.password, u?.credential || env.AUTH_CREDENTIAL);
   if (!u || !ok) {
     await log(env, "login.failed", null, null, 401).run();
     return json({ error: "Account or password not recognised." }, 401);
   }
+  if (env.AUTH_MODE !== "password-test" && !u.email_verified_at)
+    return startEmailVerification(u, env, json);
+  return createSession(u, env, json);
+}
+async function createSession(u, env, json) {
   const token = randomToken(),
     csrf = randomToken(),
     now = Date.now();
@@ -119,15 +135,145 @@ export async function session(req, env) {
   const key = await digest(token),
     now = Date.now();
   const s = await env.DB.prepare(
-    "SELECT sessions.*,users.username,users.role FROM sessions JOIN users ON users.id=sessions.user_id WHERE token_hash=? AND expires>? AND last_seen>? AND users.active=1",
+    "SELECT sessions.*,users.username,users.role,users.email_verified_at FROM sessions JOIN users ON users.id=sessions.user_id WHERE token_hash=? AND expires>? AND last_seen>? AND users.active=1",
   )
     .bind(key, now, now - 1800000)
     .first();
+  if (
+    s &&
+    (!validPoliceEmail(s.username) ||
+      (env.AUTH_MODE !== "password-test" && !s.email_verified_at))
+  )
+    return null;
   if (s)
     await env.DB.prepare("UPDATE sessions SET last_seen=? WHERE token_hash=?")
       .bind(now, key)
       .run();
   return s;
+}
+async function startEmailVerification(u, env, json) {
+  if (!env.EMAIL || !env.EMAIL_FROM)
+    return json(
+      {
+        error:
+          "Work-email verification awaits an approved sender. Access has not been granted.",
+      },
+      503,
+    );
+  const now = Date.now();
+  const recent = await env.DB.prepare(
+    "SELECT created_at FROM email_challenges WHERE user_id=? ORDER BY created_at DESC LIMIT 1",
+  )
+    .bind(u.id)
+    .first();
+  if (recent && now - recent.created_at < 60000)
+    return json(
+      {
+        error: "Wait one minute before requesting another verification email.",
+      },
+      429,
+    );
+  const rate = await env.DB.prepare(
+    "INSERT INTO login_limits(key,attempts,expires) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=attempts+1 RETURNING attempts",
+  )
+    .bind("verify-" + u.id + "-" + Math.floor(now / 3600000), now + 3600000)
+    .first();
+  if (rate.attempts > 5)
+    return json(
+      { error: "Verification email limit reached. Try again in one hour." },
+      429,
+    );
+  const token = randomToken(),
+    code = randomToken().slice(0, 8).toUpperCase(),
+    key = await digest(token);
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM email_challenges WHERE user_id=?").bind(u.id),
+    env.DB.prepare(
+      "INSERT INTO email_challenges(token_hash,user_id,code_hash,expires,created_at) VALUES (?,?,?,?,?)",
+    ).bind(key, u.id, await digest(token + ":" + code), now + 600000, now),
+  ]);
+  try {
+    await env.EMAIL.send({
+      to: u.username,
+      from: { email: env.EMAIL_FROM, name: "CCTV Enquiries" },
+      subject: "Verify your CCTV Enquiries work email",
+      text:
+        "Your verification code is " +
+        code +
+        ". It expires in 10 minutes. Enter it only in the CCTV Enquiries sign-in screen where you requested it. If you did not request this, ignore this email. No camera or investigation information is included.",
+      html:
+        "<p>Your CCTV Enquiries verification code is <strong>" +
+        code +
+        "</strong>.</p><p>Expires in 10 minutes. Enter it only in the sign-in screen where you requested it. If you did not request this, ignore this email.</p>",
+    });
+  } catch {
+    await env.DB.prepare("DELETE FROM email_challenges WHERE token_hash=?")
+      .bind(key)
+      .run();
+    return json(
+      {
+        error:
+          "Verification email could not be sent. Access has not been granted. Contact the administrator.",
+      },
+      503,
+    );
+  }
+  await log(env, "email.verification.sent", u.id).run();
+  return json({ verificationRequired: true, challenge: token });
+}
+export async function verifyEmail(req, env, json, payload) {
+  if (!(await throttle(req, env)))
+    return json({ error: "Too many attempts. Try again in 15 minutes." }, 429);
+  const b = await payload(req, 2048);
+  if (
+    typeof b.challenge !== "string" ||
+    !/^[a-f0-9]{64}$/.test(b.challenge) ||
+    typeof b.code !== "string" ||
+    !/^[a-f0-9]{8}$/i.test(b.code.trim())
+  )
+    return json(
+      { error: "Enter the eight-character code from your work email." },
+      400,
+    );
+  const key = await digest(b.challenge),
+    now = Date.now();
+  const challenge = await env.DB.prepare(
+    "UPDATE email_challenges SET attempts=attempts+1 WHERE token_hash=? AND expires>? AND attempts<5 RETURNING *",
+  )
+    .bind(key, now)
+    .first();
+  if (
+    !challenge ||
+    challenge.code_hash !==
+      (await digest(b.challenge + ":" + b.code.trim().toUpperCase()))
+  )
+    return json(
+      {
+        error:
+          "Code incorrect or expired. Sign in again to request a new code.",
+      },
+      400,
+    );
+  const u = await env.DB.prepare("SELECT * FROM users WHERE id=? AND active=1")
+    .bind(challenge.user_id)
+    .first();
+  if (!u || !validPoliceEmail(u.username))
+    return json({ error: "Account unavailable." }, 403);
+  const claimed = await env.DB.prepare(
+    "DELETE FROM email_challenges WHERE token_hash=? RETURNING token_hash",
+  )
+    .bind(key)
+    .first();
+  if (!claimed)
+    return json({ error: "Code already used. Sign in again." }, 400);
+  await env.DB.batch([
+    env.DB.prepare("UPDATE users SET email_verified_at=? WHERE id=?").bind(
+      now,
+      u.id,
+    ),
+    log(env, "email.verified", u.id),
+  ]);
+  return createSession({ ...u, email_verified_at: now }, env, json);
 }
 export async function publicAccounts(req, env, path, json, payload) {
   if (
@@ -141,11 +287,10 @@ export async function publicAccounts(req, env, path, json, payload) {
   checkPassword(b.password);
   const username =
     typeof b.username === "string" ? b.username.trim().toLowerCase() : "";
-  if (!/^[a-z0-9][a-z0-9_-]{2,39}$/.test(username))
+  if (!validPoliceEmail(username))
     return json(
       {
-        error:
-          "Use an account alias of 3–40 letters, numbers, hyphens or underscores.",
+        error: "Use your force email address ending in .police.uk.",
       },
       400,
     );
@@ -202,6 +347,7 @@ export async function publicAccounts(req, env, path, json, payload) {
       ).bind(stored, await digest(recovery), u.id, u.recovery_hash),
       guard(env),
       env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(u.id),
+      env.DB.prepare("DELETE FROM email_challenges WHERE user_id=?").bind(u.id),
       log(env, "password.recovered", u.id),
     ]);
   }
@@ -230,6 +376,9 @@ export async function accountRoutes(req, env, path, s, json, payload) {
       ),
       guard(env),
       env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(s.user_id),
+      env.DB.prepare("DELETE FROM email_challenges WHERE user_id=?").bind(
+        s.user_id,
+      ),
       log(env, "password.changed", s.user_id),
     ]);
     return json({ ok: true, recovery }, 200, { "Set-Cookie": cookie("", 0) });
@@ -319,6 +468,9 @@ export async function accountRoutes(req, env, path, s, json, payload) {
             "UPDATE users SET role=? WHERE id=? AND active=1",
           ).bind(b.role, user[1]),
       env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(user[1]),
+      env.DB.prepare("DELETE FROM email_challenges WHERE user_id=?").bind(
+        user[1],
+      ),
       env.DB.prepare(
         "UPDATE invitations SET revoked=1 WHERE created_by=? AND used_at IS NULL",
       ).bind(user[1]),

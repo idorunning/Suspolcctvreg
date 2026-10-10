@@ -1,17 +1,20 @@
 import { useState } from "react";
 import { LocateFixed, MapPin, ShieldCheck, Check } from "lucide-react";
 import type { CameraRecord, Point } from "./domain";
+import CameraPlacement from "./CameraPlacement";
 import Modal from "./Modal";
 import PhotoEditor from "./PhotoEditor";
 import { api } from "./api";
 export default function CameraForm({
   initial,
   point,
+  tiles,
   onClose,
   onSaved,
 }: {
   initial: CameraRecord | null;
   point: Point;
+  tiles: boolean;
   onClose: () => void;
   onSaved: (c: CameraRecord) => void;
 }) {
@@ -30,6 +33,16 @@ export default function CameraForm({
     viewDistance: initial?.viewDistance ?? 30,
     retentionDays: initial?.retentionDays ?? (null as number | null),
   });
+  const [placed, setPlaced] = useState(!!initial);
+  const [locationConfirmed, setLocationConfirmed] = useState(!!initial);
+  const [placementMode, setPlacementMode] = useState<"location" | "view">(
+    initial ? "view" : "location",
+  );
+  const [mapTiles, setMapTiles] = useState(tiles);
+  const [gpsFocus, setGPSFocus] = useState<{
+    point: Point;
+    key: number;
+  } | null>(null);
   const [confirmed, setConfirmed] = useState(false),
     [contactConfirmed, setContactConfirmed] = useState(false),
     [photoConfirmed, setPhotoConfirmed] = useState(false),
@@ -69,6 +82,10 @@ export default function CameraForm({
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (!placed || !locationConfirmed) {
+      setError("Choose the camera on the map and confirm its position first.");
+      return;
+    }
     setBusy(true);
     try {
       const body = {
@@ -94,15 +111,19 @@ export default function CameraForm({
   function locate() {
     if (!navigator.geolocation) {
       setError(
-        "GPS is not available. Enter coordinates or choose the position on the map.",
+        "GPS is not available. Pan the map and tap the camera position.",
       );
       return;
     }
     setGPS("Getting GPS location…");
     navigator.geolocation.getCurrentPosition(
       (p) => {
-        update("lat", Number(p.coords.latitude.toFixed(7)));
-        update("lng", Number(p.coords.longitude.toFixed(7)));
+        setGPSFocus({
+          point: { lat: p.coords.latitude, lng: p.coords.longitude },
+          key: Date.now(),
+        });
+        setPlacementMode("location");
+        setLocationConfirmed(false);
         setGPS(
           `GPS accuracy: approximately ${Math.round(p.coords.accuracy)} metres. Check that the position is the camera, not where you are standing.`,
         );
@@ -110,7 +131,7 @@ export default function CameraForm({
       () => {
         setGPS("");
         setError(
-          "Location access was unavailable. Allow location in browser settings, or use the map and coordinates.",
+          "Location access was unavailable. Allow location in browser settings, or pan the map to the camera.",
         );
       },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
@@ -118,7 +139,7 @@ export default function CameraForm({
   }
   return (
     <Modal
-      title={initial ? "Update camera" : "Quick add camera"}
+      title={initial ? "Update camera" : "Add camera"}
       subtitle="Public-facing CCTV · no footage or personal details"
       onClose={onClose}
       wide
@@ -136,7 +157,11 @@ export default function CameraForm({
             <legend>
               1 <span>Camera location</span>
             </legend>
-            <button type="button" className="secondary full" onClick={locate}>
+            <button
+              type="button"
+              className="primary full gps-start"
+              onClick={locate}
+            >
               <LocateFixed size={18} />
               Use my GPS location
             </button>
@@ -145,54 +170,128 @@ export default function CameraForm({
                 {gps}
               </p>
             )}
-            <div className="form-grid">
-              <label>
-                Latitude
-                <input
-                  type="number"
-                  step="any"
-                  min="49"
-                  max="61"
-                  required
-                  value={value.lat}
-                  onChange={(e) =>
-                    update(
-                      "lat",
-                      e.target.value === "" ? "" : Number(e.target.value),
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Longitude
-                <input
-                  type="number"
-                  step="any"
-                  min="-9"
-                  max="3"
-                  required
-                  value={value.lng}
-                  onChange={(e) =>
-                    update(
-                      "lng",
-                      e.target.value === "" ? "" : Number(e.target.value),
-                    )
-                  }
-                />
-              </label>
-            </div>
+            {!mapTiles && (
+              <div className="info-box">
+                <span>
+                  OpenStreetMap receives your IP address and the area viewed.
+                  Use test locations only.
+                  <button
+                    type="button"
+                    className="secondary full"
+                    onClick={() => setMapTiles(true)}
+                  >
+                    Enable test map
+                  </button>
+                </span>
+              </div>
+            )}
             <p className="help">
-              <MapPin size={13} />
-              The initial position is{" "}
-              {initial
-                ? "the saved camera position"
-                : "your chosen point on the map"}
-              . You can correct the coordinates.
+              Use GPS to find the area, then tap the map at the camera. Drag the
+              blue pin or tap again until it is correct.
             </p>
+            <CameraPlacement
+              value={value}
+              tiles={mapTiles}
+              placed={placed}
+              mode={placementMode}
+              focus={gpsFocus}
+              onChange={(changes, location) => {
+                setValue((v) => ({ ...v, ...changes }));
+                if (location) {
+                  setPlaced(true);
+                  setLocationConfirmed(false);
+                }
+              }}
+            />
+            {placed && (
+              <p className="help">
+                Camera: {value.lat.toFixed(6)}, {value.lng.toFixed(6)}
+              </p>
+            )}
+            {placementMode === "location" ? (
+              <button
+                type="button"
+                className="primary full placement-confirm"
+                disabled={!placed}
+                onClick={() => {
+                  setLocationConfirmed(true);
+                  setPlacementMode("view");
+                }}
+              >
+                Confirm location · set camera view
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="secondary full"
+                onClick={() => {
+                  setPlacementMode("location");
+                  setLocationConfirmed(false);
+                }}
+              >
+                Move camera location
+              </button>
+            )}
+            {placementMode === "view" && (
+              <div className="cone-controls">
+                <h3>2 · Aim the camera view</h3>
+                <p>
+                  Drag ↗ to aim the cone and set its reach. Drag ↔ to change its
+                  width.
+                </p>
+                <div className="cone-readout">
+                  {value.direction}° bearing · {value.fieldOfView}° view ·{" "}
+                  {value.viewDistance} m range
+                </div>
+                <details>
+                  <summary>Adjust with sliders</summary>
+                  <label>
+                    Direction
+                    <input
+                      type="range"
+                      min="0"
+                      max="359"
+                      value={value.direction}
+                      onChange={(e) =>
+                        update("direction", Number(e.target.value))
+                      }
+                    />
+                  </label>
+                  <label>
+                    View width
+                    <input
+                      type="range"
+                      min="1"
+                      max="360"
+                      value={value.fieldOfView}
+                      onChange={(e) =>
+                        update("fieldOfView", Number(e.target.value))
+                      }
+                    />
+                  </label>
+                  <label>
+                    View range
+                    <input
+                      type="range"
+                      min="1"
+                      max="300"
+                      value={value.viewDistance}
+                      onChange={(e) =>
+                        update("viewDistance", Number(e.target.value))
+                      }
+                    />
+                  </label>
+                </details>
+                <p className="help">
+                  Estimated coverage only. Buildings, trees and camera settings
+                  can limit the actual view.
+                </p>
+              </div>
+            )}
           </fieldset>
           <fieldset>
             <legend>
-              2 <span>Public site details</span>
+              3 <span>Public site details</span>
             </legend>
             <div className="segmented">
               <button
@@ -355,62 +454,8 @@ export default function CameraForm({
           </fieldset>
           <fieldset>
             <legend>
-              3 <span>Camera view</span>
+              4 <span>Recording and reference photo</span>
             </legend>
-            <div className="form-grid three">
-              <label>
-                Direction (°)
-                <input
-                  type="number"
-                  min="0"
-                  max="359"
-                  required
-                  value={value.direction}
-                  onChange={(e) =>
-                    update(
-                      "direction",
-                      e.target.value === "" ? "" : Number(e.target.value),
-                    )
-                  }
-                />
-              </label>
-              <label>
-                Field of view (°)
-                <input
-                  type="number"
-                  min="1"
-                  max="360"
-                  required
-                  value={value.fieldOfView}
-                  onChange={(e) =>
-                    update(
-                      "fieldOfView",
-                      e.target.value === "" ? "" : Number(e.target.value),
-                    )
-                  }
-                />
-              </label>
-              <label>
-                View distance (m)
-                <input
-                  type="number"
-                  min="1"
-                  max="300"
-                  required
-                  value={value.viewDistance}
-                  onChange={(e) =>
-                    update(
-                      "viewDistance",
-                      e.target.value === "" ? "" : Number(e.target.value),
-                    )
-                  }
-                />
-              </label>
-            </div>
-            <p className="help">
-              0° = north · 90° = east · estimates only. These do not prove a
-              location was recorded.
-            </p>
             <label>
               Reported recording retention
               <select
@@ -430,11 +475,7 @@ export default function CameraForm({
                 ))}
               </select>
             </label>
-          </fieldset>
-          <fieldset>
-            <legend>
-              4 <span>Reference photo</span>
-            </legend>
+
             {initial?.hasPhoto && !removePhoto && !photo && (
               <div className="existing-photo">
                 <img
@@ -502,7 +543,11 @@ export default function CameraForm({
           >
             Cancel
           </button>
-          <button className="primary" type="submit" disabled={busy}>
+          <button
+            className="primary"
+            type="submit"
+            disabled={busy || !locationConfirmed}
+          >
             <Check size={18} />
             {busy ? "Saving…" : initial ? "Save changes" : "Save camera"}
           </button>

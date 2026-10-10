@@ -34,6 +34,7 @@ const metadata = {
   main_module: "entry.mjs",
   compatibility_date: "2026-10-01",
   bindings: [
+    { type: "plain_text", name: "AUTH_MODE", text: "password-test" },
     { type: "d1", name: "DB", id: "80561528-ff48-4e92-b6f5-82f20ea547ed" },
   ],
   keep_bindings: ["secret_text"],

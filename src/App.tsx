@@ -100,15 +100,17 @@ function PrivacyContent() {
       </p>
       <h3>Access and retention</h3>
       <p>
-        The test uses individual account aliases and role permissions, an
+        The test uses individual police email addresses and role permissions, an
         eight-hour maximum session and a 30-minute server inactivity limit.
         Sessions are held in an essential, secure HTTP-only cookie. There are no
         advertising or analytics cookies. Browser storage is not used for camera
-        records, routes or passwords. Account aliases, password hashes,
+        records, routes or passwords. Police email addresses, password hashes,
         recovery-code hashes and role assignments are stored separately from
         camera data. These security records may be personal data; the
         camera-content restriction does not make the whole service anonymous.
-        Invite recipients’ email addresses are not stored by the app.
+        Work-email verification is prepared but delivery and enforcement are
+        pending a force-approved sender for this demonstration. Invite
+        recipients’ email addresses are not stored by the app.
       </p>
       <p>
         Camera data and reviewed photos are stored in a Cloudflare D1 database
@@ -177,6 +179,8 @@ function Login({
   onPrivacy: () => void;
 }) {
   const [username, setUsername] = useState("");
+  const [challenge, setChallenge] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [registration, setRegistration] = useState(
     location.hash.startsWith("#invite="),
   );
@@ -226,10 +230,19 @@ function Login({
             setBusy(true);
             setError("");
             try {
-              const r = await api("/login", {
+              const r = await api(challenge ? "/verify-email" : "/login", {
                 method: "POST",
-                body: JSON.stringify({ username, password }),
+                body: JSON.stringify(
+                  challenge
+                    ? { challenge, code: verificationCode }
+                    : { username, password },
+                ),
               });
+              if (r.verificationRequired) {
+                setChallenge(r.challenge);
+                setPassword("");
+                return;
+              }
               setCSRF(r.csrf);
               setPassword("");
               onLogin(r.user);
@@ -246,28 +259,64 @@ function Login({
           <div className="test-pill">CONTROLLED TEST VERSION</div>
           <h2>Open your workspace</h2>
           <p>Sign in with your individual account.</p>
-          <label>
-            Account alias
-            <input
-              required
-              autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              maxLength={40}
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
-              maxLength={200}
-            />
-          </label>
+          {!challenge && (
+            <>
+              <label>
+                Police email address
+                <input
+                  required
+                  type="email"
+                  autoComplete="username"
+                  placeholder="name@force.police.uk"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  maxLength={254}
+                />
+              </label>
+              <label>
+                Password
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  maxLength={200}
+                />
+              </label>
+            </>
+          )}
+          {challenge && (
+            <div>
+              <p>
+                Check your work email for the eight-character verification code.
+              </p>
+              <label>
+                Verification code
+                <input
+                  autoComplete="one-time-code"
+                  required
+                  minLength={8}
+                  maxLength={8}
+                  value={verificationCode}
+                  onChange={(e) =>
+                    setVerificationCode(e.target.value.toUpperCase())
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  setChallenge("");
+                  setVerificationCode("");
+                }}
+              >
+                Back to sign in / request another code
+              </button>
+            </div>
+          )}
           {error && (
             <p className="form-error" role="alert">
               {error}
@@ -644,11 +693,8 @@ export default function App() {
   }
   function beginAdd() {
     setSelected(null);
-    setPicking("add");
-    setTab("map");
-    notify(
-      "Tap the camera position on the map, or use Quick add at map centre.",
-    );
+    setPicking(null);
+    setForm({ initial: null, point: mapCentre });
   }
   const pickingText =
     picking === "add"
@@ -1492,7 +1538,7 @@ export default function App() {
           </button>
           <button onClick={() => setForm({ initial: null, point: mapCentre })}>
             <Plus size={23} />
-            Quick add
+            Add camera
           </button>
         </nav>
       </div>
@@ -1711,6 +1757,7 @@ export default function App() {
         <CameraForm
           initial={form.initial}
           point={form.point}
+          tiles={tiles}
           onClose={() => setForm(null)}
           onSaved={(c) => {
             setCameras((old) =>

@@ -1,5 +1,6 @@
 import {
   login as accountLogin,
+  verifyEmail,
   session,
   publicAccounts,
   accountRoutes,
@@ -236,6 +237,8 @@ const app = {
         return json({ error: "Request origin not allowed." }, 403);
       if (path === "/api/login" && req.method === "POST")
         return await accountLogin(req, env, json, payload);
+      if (path === "/api/verify-email" && req.method === "POST")
+        return await verifyEmail(req, env, json, payload);
       const publicResult = await publicAccounts(req, env, path, json, payload);
       if (publicResult) return publicResult;
       const s = await session(req, env);
@@ -253,6 +256,7 @@ const app = {
           mode: "test",
           mapProvider: "OpenStreetMap",
           routeProvider: "FOSSGIS / OSRM (walking and driving)",
+          emailVerificationEnabled: env.AUTH_MODE !== "password-test",
         });
       const accountResult = await accountRoutes(
         req,
@@ -543,6 +547,9 @@ const app = {
     }
   },
   async scheduled(event, env) {
+    await env.DB.prepare("DELETE FROM email_challenges WHERE expires<?")
+      .bind(Date.now())
+      .run();
     const now = Date.now();
     await env.DB.batch([
       env.DB.prepare(
@@ -562,6 +569,7 @@ export default {
     if (path.startsWith("/api/")) {
       const resource = [
         "login",
+        "verify-email",
         "register",
         "recover",
         "session",
