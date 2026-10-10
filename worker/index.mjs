@@ -140,7 +140,7 @@ async function externalLimit(env, service, windowMs) {
     .first();
   return row.attempts <= 1;
 }
-async function places(req) {
+export async function places(req) {
   const b = await payload(req, 2048);
   if (
     b.externalConsent !== true ||
@@ -155,35 +155,77 @@ async function places(req) {
       "Confirm a valid test location for the external business lookup.",
     );
   const query = `[out:json][timeout:12];(nwr(around:150,${b.lat.toFixed(6)},${b.lng.toFixed(6)})[shop][name];nwr(around:150,${b.lat.toFixed(6)},${b.lng.toFixed(6)})[amenity~"^(restaurant|cafe|pub|bar|fuel|bank)$"][name];);out center tags 30;`;
-  const res = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    body: query,
-    headers: {
-      "Content-Type": "text/plain",
-      "User-Agent": "CCTV-Enquiries-Test/2.0",
-    },
-    signal: AbortSignal.timeout(18000),
-  });
-  if (!res.ok)
-    throw new Error(
-      "Public business lookup is unavailable. Please enter the site details manually.",
+  let res;
+  try {
+    res = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      body: query,
+      headers: {
+        "Content-Type": "text/plain",
+        "User-Agent": "CCTV-Enquiries-Test/2.0",
+      },
+      signal: AbortSignal.timeout(18000),
+    });
+  } catch {
+    return json(
+      {
+        error:
+          "The business lookup timed out or could not connect. Try again later or enter the site details manually.",
+      },
+      503,
     );
-  const data = await res.json();
+  }
+  if (!res.ok)
+    return json(
+      {
+        error: `Public business lookup is temporarily unavailable (provider HTTP ${res.status}). Try again later or enter the site details manually.`,
+      },
+      503,
+    );
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    return json(
+      {
+        error:
+          "The business service returned an unreadable response. Please enter the site details manually.",
+      },
+      503,
+    );
+  }
+  if (!data || data.remark || !Array.isArray(data.elements))
+    return json(
+      {
+        error:
+          "The business service could not complete this lookup. Try again later or enter the site details manually.",
+      },
+      503,
+    );
   return json({
-    places: (data.elements || []).map((e) => ({
-      name: e.tags.name,
-      address: [
-        e.tags["addr:housenumber"],
-        e.tags["addr:street"],
-        e.tags["addr:city"],
-        e.tags["addr:postcode"],
-      ]
-        .filter(Boolean)
-        .join(" "),
-      publicPhone: e.tags["contact:phone"] || e.tags.phone || "",
-      contactSource: e.tags["contact:website"] || e.tags.website || "",
-      placeSource: `https://www.openstreetmap.org/${e.type}/${e.id}`,
-    })),
+    places: data.elements
+      .filter(
+        (e) =>
+          e &&
+          typeof e.tags?.name === "string" &&
+          ["node", "way", "relation"].includes(e.type) &&
+          Number.isSafeInteger(e.id),
+      )
+      .slice(0, 30)
+      .map((e) => ({
+        name: e.tags.name,
+        address: [
+          e.tags["addr:housenumber"],
+          e.tags["addr:street"],
+          e.tags["addr:city"],
+          e.tags["addr:postcode"],
+        ]
+          .filter(Boolean)
+          .join(" "),
+        publicPhone: e.tags["contact:phone"] || e.tags.phone || "",
+        contactSource: e.tags["contact:website"] || e.tags.website || "",
+        placeSource: `https://www.openstreetmap.org/${e.type}/${e.id}`,
+      })),
   });
 }
 async function route(req) {

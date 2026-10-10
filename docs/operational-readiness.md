@@ -40,7 +40,9 @@ A reference replacing a name is not necessarily anonymous. The ICO distinguishes
 
 **Current pilot:** OpenStreetMap tiles load only after the mapping notice is accepted; requests expose the viewed area and browser IP to the tile service. OSRM road routing is separately enabled, sends coordinates via the Worker and returns a driving route. Manual tracing makes no routing request. The public services' usage policies and availability limits apply.
 
-**Business suggestions:** the optional Overpass action searches a 150-metre area for named shops and a short list of commercial amenities. Only location coordinates, not camera IDs or case narratives, are sent. Listings may pre-fill details, keep OpenStreetMap attribution and require confirmation before saving. A shop listing is not evidence of a camera. Live testing returned an external-service-unavailable response. Further testing was automatically rejected because camera coordinates would be disclosed to Overpass without specific destination authorisation. Manual entry is the working fallback; the lookup remains unverified.
+**Business suggestions:** the optional Overpass action searches a 150-metre area for named shops and a short list of commercial amenities. Only location coordinates, not camera IDs or case narratives, are sent. Listings may pre-fill details, keep OpenStreetMap attribution and require confirmation before saving. A shop listing is not evidence of a camera. Nathan authorised sharing selected test coordinates with Overpass on 10 October 2026. The direct diagnostic returned 30 listings, but the deployed Worker received provider **HTTP 521**. An isolated trial of the documented browser request path also failed twice; it was removed and no extra browser connection permission was deployed. The website retains the server-mediated lookup and manual entry. The external failure cause is not established beyond the observed responses; this is not an authentication/plugin-reconnection problem. Lookup failures, malformed replies and incomplete results now return an explicit service-unavailable error, not a successful empty list.
+
+**Lookup barrier and next action:** automatic business suggestions are not verified as working on the live site. Before relying on this feature, obtain an approved, supported gazetteer/business-data service or host an OSM extract on approved infrastructure, then verify the integration from that environment. Agree processor terms, permitted disclosures, data quality and licensing before changing destinations. Do not add unapproved proxy services or silently switch providers. Manual verification of premises and contacts remains necessary.
 
 **Google Places:** it can supply business details, but its storage, caching, attribution and map-display restrictions apply. Do not scrape Google Maps or persist Places content indiscriminately into this Leaflet register. The present build contains no Google API key or Google Places import. If selected later, review the current contract and implement a permitted lookup/display design. Independently verified organisation details and approved local/council datasets may be a better persistent source.
 
@@ -59,11 +61,12 @@ A reference replacing a name is not necessarily anonymous. The ICO distinguishes
 
 ## Validation and known limits
 
-- Build, TypeScript checks and eight unit tests pass; dependency audit reported zero vulnerabilities after removing obsolete dependencies and applying updates.
+- Build, TypeScript checks and eleven unit tests pass; dependency audit reported zero vulnerabilities after removing obsolete dependencies and applying updates.
 - Live server checks passed for unauthorised record/photo access rejection, origin and CSRF enforcement, login/session attributes, sanitised import, unknown-field rejection, create/photo retrieval, concurrent-edit rejection, deletion and logout revocation. Road routing returned real street geometry.
+- Additional tests verify that business lookup requires explicit consent, maps only the supported suggestion fields, and distinguishes upstream failures/partial responses from no matches. No returned business listings were saved to the camera register during this follow-up.
 - Desktop clustering, manual route candidate ordering, mobile layout and quick-add submission were inspected with synthetic fixtures. These UI checks were separate from the real protected database.
 - No email was sent. The email function prepares a draft; long lists download a CSV for attachment.
-- No force approval, external penetration test, physical-device camera/GPS test, or successful public-business lookup is claimed.
+- No force approval, external penetration test, physical-device camera/GPS test, or successful deployed public-business lookup is claimed. The direct provider diagnostic succeeded once; that does not establish reliable integration.
 - A shared credential permits every holder to edit, delete and export the test register. It has no per-person revocation or attribution. Keep access narrow and do not treat it as sufficient for live investigations.
 - The site is a responsive web application, not a separately packaged Android/iOS application. Its manifest supports a home-screen shortcut where the browser allows it. It deliberately does not cache operational data for offline use.
 
@@ -77,5 +80,6 @@ Reviewed 10 October 2026. Recheck before operational approval.
 - [ICO: carrying out a DPIA](https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/accountability-and-governance/data-protection-impact-assessments-dpias/how-do-we-do-a-dpia/).
 - [Google Places API policies](https://developers.google.com/maps/documentation/places/web-service/policies) and [Maps Platform service-specific terms](https://cloud.google.com/maps-platform/terms/maps-service-terms).
 - [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/) and [copyright/licence](https://www.openstreetmap.org/copyright).
+- [Overpass HTTP API documentation](https://dev.overpass-api.de/command_line.html) and [public-instance resource policy](https://dev.overpass-api.de/overpass-doc/en/preface/commons.html).
 - [OSRM API documentation](https://project-osrm.org/docs/v26.6.1/http).
 - [Cloudflare Workers Web Crypto](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/).
