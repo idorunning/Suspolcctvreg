@@ -1,3 +1,4 @@
+import Access, { Registration, type Account } from "./Access";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -95,27 +96,32 @@ function PrivacyContent() {
       </p>
       <h3>Access and retention</h3>
       <p>
-        The test uses a shared password, an eight-hour maximum session and a
-        30-minute server inactivity limit. Sessions are held in an essential,
-        secure HTTP-only cookie. There are no advertising or analytics cookies.
-        Browser storage is not used for camera records, routes or passwords.
+        The test uses individual account aliases and role permissions, an
+        eight-hour maximum session and a 30-minute server inactivity limit.
+        Sessions are held in an essential, secure HTTP-only cookie. There are no
+        advertising or analytics cookies. Browser storage is not used for camera
+        records, routes or passwords. Account aliases, password hashes,
+        recovery-code hashes and role assignments are stored separately from
+        camera data. These security records may be personal data; the
+        camera-content restriction does not make the whole service anonymous.
+        Invite recipients’ email addresses are not stored by the app.
       </p>
       <p>
         Camera data and reviewed photos are stored in a Cloudflare D1 database
-        restricted to the EU. This is not a UK-only hosting guarantee.
-        Non-identifying change events are retained for 14 days; short-lived
-        pseudonymous login-throttling records are also processed. Cloudflare may
-        process network identifiers under its service terms. Backups may retain
-        deleted data temporarily.
+        restricted to the EU. This is not a UK-only hosting guarantee. Account
+        IDs and application events are retained for 14 days in the audit log;
+        short-lived pseudonymous login-throttling records are also processed.
+        Cloudflare may process network identifiers under its service terms.
+        Backups may retain deleted data temporarily.
       </p>
       <h3>Before police use</h3>
       <p>
         The force must approve the controller, lawful basis, DPIA, security
         assessment, processor agreements, international transfers, retention,
-        audit trail, access controls and mapping services. Named accounts, MFA,
-        role-based permissions and independent testing are still required. Ask
-        the project owner to correct or remove test records; use force channels
-        for any actual data incident.
+        audit trail, access controls and mapping services. MFA, force identity
+        integration and independent testing are still required. Ask the project
+        owner to correct or remove test records; use force channels for any
+        actual data incident.
       </p>
       <div className="policy-links">
         <a
@@ -163,9 +169,13 @@ function Login({
   onLogin,
   onPrivacy,
 }: {
-  onLogin: () => void;
+  onLogin: (user: Account) => void;
   onPrivacy: () => void;
 }) {
+  const [username, setUsername] = useState("");
+  const [registration, setRegistration] = useState(
+    location.hash.startsWith("#invite="),
+  );
   const [password, setPassword] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -214,11 +224,11 @@ function Login({
             try {
               const r = await api("/login", {
                 method: "POST",
-                body: JSON.stringify({ password }),
+                body: JSON.stringify({ username, password }),
               });
               setCSRF(r.csrf);
               setPassword("");
-              onLogin();
+              onLogin(r.user);
             } catch (e) {
               setError((e as Error).message);
             } finally {
@@ -231,7 +241,17 @@ function Login({
           </div>
           <div className="test-pill">CONTROLLED TEST VERSION</div>
           <h2>Open your workspace</h2>
-          <p>Enter the shared test password to continue.</p>
+          <p>Sign in with your individual account.</p>
+          <label>
+            Account alias
+            <input
+              required
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              maxLength={40}
+            />
+          </label>
           <label>
             Password
             <input
@@ -253,6 +273,13 @@ function Login({
             {busy ? "Checking…" : "Sign in"}
             <ArrowRight size={19} />
           </button>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => setRegistration(true)}
+          >
+            Reset password with recovery code
+          </button>
           <div className="login-notice">
             <ShieldCheck size={20} />
             <p>
@@ -268,10 +295,14 @@ function Login({
           CCTV Enquiries · v2.0 · Evaluation build
         </span>
       </section>
+      {registration && <Registration onClose={() => setRegistration(false)} />}
     </main>
   );
 }
 export default function App() {
+  const [user, setUser] = useState<Account | null>(null),
+    [accessOpen, setAccessOpen] = useState(false),
+    [pov, setPOV] = useState<string | null>(null);
   const [signed, setSigned] = useState(false),
     [checking, setChecking] = useState(true),
     [cameras, setCameras] = useState<CameraRecord[]>([]),
@@ -323,6 +354,9 @@ export default function App() {
   }, [toast]);
   const clearSession = useCallback(() => {
     setSigned(false);
+    setUser(null);
+    setAccessOpen(false);
+    setPOV(null);
     setCameras([]);
     setSelected(null);
     setForm(null);
@@ -343,6 +377,7 @@ export default function App() {
     api("/session")
       .then((r) => {
         setCSRF(r.csrf);
+        setUser(r.user);
         setSigned(true);
         setWelcome(true);
       })
@@ -414,7 +449,23 @@ export default function App() {
   }
   function select(c: CameraRecord) {
     setSelected(c);
+    setPOV(null);
     fly(c);
+  }
+  function recordEvent(action: string) {
+    return api("/events", { method: "POST", body: JSON.stringify({ action }) });
+  }
+  function clearRoute(startNew = false) {
+    invalidateRoute();
+    setWaypoints([]);
+    setPicking(startNew ? (routeMode === "trace" ? "trace" : "a") : null);
+    setManualPoint("");
+    setRouteNotice(false);
+    setSelected(null);
+    setPOV(null);
+    setExportOpen(false);
+    setTab("route");
+    recordEvent("route.cleared").catch((e) => notify(e.message));
   }
   function invalidateRoute() {
     routeVersion.current++;
@@ -501,7 +552,13 @@ export default function App() {
       if (version === routeVersion.current) setRouteBusy(false);
     }
   }
-  function download() {
+  async function download() {
+    try {
+      await recordEvent("export.csv");
+    } catch (e) {
+      notify((e as Error).message);
+      return;
+    }
     const blob = new Blob(
       [cameraCSV(exportCameras, tab === "route" ? route : [])],
       { type: "text/csv;charset=utf-8;" },
@@ -514,9 +571,15 @@ export default function App() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     notify("Camera list exported. Store it on an approved police system.");
   }
-  function emailDraft() {
+  async function emailDraft() {
     if (!/^[^\s@]+@(?:[a-z0-9-]+\.)*police\.uk$/i.test(email)) {
       notify("Enter an approved police.uk email address.");
+      return;
+    }
+    try {
+      await recordEvent("export.email-draft");
+    } catch (e) {
+      notify((e as Error).message);
       return;
     }
     const lines = exportCameras.map(
@@ -527,7 +590,7 @@ export default function App() {
       `CCTV enquiry candidates — TEST ONLY\n${exportCameras.length} cameras${tab === "route" ? ` within ${radius} m of the ${routeMode === "road" ? "indicative driving" : "manually traced"} route` : ""}. Proximity does not confirm footage coverage. Verify location, view and retention.\n\n` +
       lines.join("\n\n");
     if (body.length > 9000) {
-      download();
+      await download();
       body = `CCTV enquiry candidates — TEST ONLY\n${exportCameras.length} cameras. Please attach the CSV just downloaded. Verify location, view and retention before use.`;
     }
     window.location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent("CCTV enquiry camera list — test")}&body=${encodeURIComponent(body)}`;
@@ -641,7 +704,8 @@ export default function App() {
     return (
       <>
         <Login
-          onLogin={() => {
+          onLogin={(account) => {
+            setUser(account);
             setSigned(true);
             setWelcome(true);
           }}
@@ -702,6 +766,13 @@ export default function App() {
         <header className="app-header">
           <Brand small />
           <div className="header-actions">
+            <button
+              className="secondary"
+              onClick={() => setAccessOpen(true)}
+              aria-label="Account and administration"
+            >
+              Account
+            </button>
             <span className="environment">
               <i />
               TEST WORKSPACE
@@ -940,6 +1011,10 @@ export default function App() {
                       <button
                         className="primary"
                         onClick={() => {
+                          if (picking === "trace")
+                            recordEvent("route.traced").catch((e) =>
+                              notify(e.message),
+                            );
                           setPicking(picking === "trace" ? null : "trace");
                         }}
                       >
@@ -956,6 +1031,23 @@ export default function App() {
                       </button>
                     </div>
                   )}
+                  <div className="button-row">
+                    <button
+                      className="secondary"
+                      disabled={
+                        !waypoints.length && !route.length && !routeBusy
+                      }
+                      onClick={() => clearRoute()}
+                    >
+                      Clear route
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() => clearRoute(true)}
+                    >
+                      New route
+                    </button>
+                  </div>
                   <p className="help">
                     {routeMode === "road"
                       ? "Indicative driving route. For a walking or observed path, trace it manually."
@@ -996,16 +1088,6 @@ export default function App() {
                         <strong>{matches.length}</strong>
                         <span>camera candidates</span>
                       </div>
-                      <button
-                        className="icon-button"
-                        aria-label="Clear route"
-                        onClick={() => {
-                          setPoints([]);
-                          setPicking(null);
-                        }}
-                      >
-                        <X size={17} />
-                      </button>
                     </div>
                   )}
                   {(query || filter !== "all" || verifiedOnly) && (
@@ -1078,7 +1160,7 @@ export default function App() {
           <section className="map-section" aria-label="Camera map">
             <CCTVMap
               cameras={displayed}
-              selected={selectedId}
+              selected={selectedId || pov}
               onSelect={select}
               onPoint={pointChosen}
               picking={pickingText}
@@ -1101,6 +1183,11 @@ export default function App() {
                 <Route size={18} />
                 Plan a route
               </button>
+              {(route.length > 0 || waypoints.length > 0) && (
+                <button className="map-action" onClick={() => clearRoute()}>
+                  Clear route
+                </button>
+              )}
               <button className="primary" onClick={beginAdd}>
                 <Plus size={19} />
                 Add camera
@@ -1280,6 +1367,7 @@ export default function App() {
           <div className="modal-foot">
             <button
               className="icon-button danger-text"
+              hidden={user?.role !== "webmaster"}
               aria-label="Delete camera"
               onClick={() => setDeleteOpen(true)}
             >
@@ -1296,13 +1384,61 @@ export default function App() {
               View on map
             </button>
             <button
+              className="secondary"
+              onClick={() => {
+                setPOV(selected.id);
+                fly(selected, 19);
+                setTab("map");
+                setSelected(null);
+                recordEvent("camera.pov").catch((e) => notify(e.message));
+              }}
+            >
+              Camera POV
+            </button>
+            <button
+              className="secondary"
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    "Confirm you have checked the camera’s public-facing status and details?",
+                  )
+                )
+                  return;
+                try {
+                  await api("/cameras/" + selected.id + "/verify", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      revision: selected.revision,
+                      confirmed: true,
+                    }),
+                  });
+                  setSelected(null);
+                  await refresh();
+                  notify("Camera verified.");
+                } catch (e) {
+                  notify((e as Error).message);
+                }
+              }}
+            >
+              Verify camera
+            </button>
+            <button
               className="primary"
+              hidden={user?.role === "user"}
               onClick={() => setForm({ initial: selected, point: selected })}
             >
-              Edit / verify
+              Edit details
             </button>
           </div>
         </Modal>
+      )}
+      {accessOpen && user && (
+        <Access
+          user={user}
+          cameras={cameras}
+          onRefresh={refresh}
+          onClose={() => setAccessOpen(false)}
+        />
       )}
       {deleteOpen && selected && (
         <Modal title="Delete this camera?" onClose={() => setDeleteOpen(false)}>

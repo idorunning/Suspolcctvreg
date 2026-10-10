@@ -22,11 +22,11 @@ if (
   );
 }
 const base = "https://suspol-cctv-test.ntracey.workers.dev";
-const access = JSON.parse(fs.readFileSync("private/access.json", "utf8"));
+const access = JSON.parse(fs.readFileSync("private/admin-access.json", "utf8"));
 const login = await fetch(base + "/api/login", {
   method: "POST",
   headers: { Origin: base, "Content-Type": "application/json" },
-  body: JSON.stringify({ password: access.password }),
+  body: JSON.stringify({ username: access.username, password: access.password }),
   signal: AbortSignal.timeout(30000),
 });
 assert.equal(login.status, 200, "Test login must succeed");

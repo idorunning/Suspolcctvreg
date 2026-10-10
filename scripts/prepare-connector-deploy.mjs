@@ -43,6 +43,7 @@ const metadata = {
 const modules = {
   "entry.mjs": entry,
   "index.mjs": fs.readFileSync("worker/index.mjs", "utf8"),
+  "accounts.mjs": fs.readFileSync("worker/accounts.mjs", "utf8"),
   "validation.mjs": fs.readFileSync("worker/validation.mjs", "utf8"),
   "assets.mjs": assets,
 };

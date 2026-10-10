@@ -4,7 +4,7 @@
 
 ## Decision
 
-Use the deployed application as a restricted, non-operational test. Do not describe it as fully data-compliant, accredited, or guaranteed free of personal data. The application now has useful technical safeguards, but organisational approval, approved suppliers, account controls and independent assurance are outstanding.
+Use the deployed application as a restricted, non-operational test. Do not describe it as fully data-compliant, accredited, or guaranteed free of personal data. The application now has useful technical safeguards, but organisational approval, approved suppliers, force identity integration and independent assurance are outstanding.
 
 Cloudflare was selected for the pilot because one Worker can enforce authentication for both the application API and photos, with D1 providing shared persistence for desktop and mobile. This avoids relying on a JavaScript-only password screen or incompatible shared-folder browser access. Netlify could also support a suitable architecture; this is not a claim that either host is automatically approved for policing.
 
@@ -53,7 +53,7 @@ A reference replacing a name is not necessarily anonymous. The ICO distinguishes
 1. Ask the force DPO/information-governance team and information-security team to sponsor a controlled pilot. Give them this data-flow description, hosting configuration and the intended user group.
 2. Agree who is the controller, purposes and lawful basis, Part 3/UK GDPR scope, data classification, DPIA need/content, processor contracts and any international-transfer assessment. If high risk remains, follow the applicable consultation process.
 3. Decide whether to move to force-controlled UK infrastructure or approve the proposed supplier/service configuration. Review logs, support access, subprocessors, backup retention and secure deletion. An EU database alone is insufficient assurance.
-4. Replace the shared password with force SSO or named accounts, MFA, least-privilege roles, removal of leavers and independently reviewable per-user audit. The current anonymous create/update/delete log is not an accountable police audit trail; viewing, exports and routing are not audited per officer.
+4. Individual account aliases, three server-enforced roles, session revocation, single-use invitations and an application event log are implemented. Before live use, connect force SSO/MFA, verify account holders, approve role allocation and protect logs independently against tampering. Browser-only activity is not comprehensively logged. The 14-day pilot retention must be formally reviewed.
 5. Approve a precise data standard: what counts as public-facing, how personal/sole-trader contacts are excluded, permitted asset references, photograph framing/redaction and who verifies additions. App validation is not a personal-data detector.
 6. Set formal review/deletion intervals. The pilot flags verification older than six months but does not automatically remove camera records. Confirm backup retention, test recovery, and agree deletion and data-rights handling.
 7. Use managed devices, an approved browser, export restrictions and approved police email. Exercise the device camera/GPS flow, accessibility, slow connections, session expiry, failed uploads and simultaneous editing with a small pilot team.
@@ -61,13 +61,16 @@ A reference replacing a name is not necessarily anonymous. The ICO distinguishes
 
 ## Validation and known limits
 
-- Build, TypeScript checks and eleven unit tests pass; dependency audit reported zero vulnerabilities after removing obsolete dependencies and applying updates.
+- Build, TypeScript checks and sixteen automated tests pass; dependency audit reported zero vulnerabilities after removing obsolete dependencies and applying updates.
 - Live server checks passed for unauthorised record/photo access rejection, origin and CSRF enforcement, login/session attributes, sanitised import, unknown-field rejection, create/photo retrieval, concurrent-edit rejection, deletion and logout revocation. Road routing returned real street geometry.
 - Additional tests verify that business lookup requires explicit consent, maps only the supported suggestion fields, and distinguishes upstream failures/partial responses from no matches. No returned business listings were saved to the camera register during this follow-up.
 - Desktop clustering, manual route candidate ordering, mobile layout and quick-add submission were inspected with synthetic fixtures. These UI checks were separate from the real protected database.
 - No email was sent. The email function prepares a draft; long lists download a CSV for attachment.
 - No force approval, external penetration test, physical-device camera/GPS test, or successful deployed public-business lookup is claimed. The direct provider diagnostic succeeded once; that does not establish reliable integration.
-- A shared credential permits every holder to edit, delete and export the test register. It has no per-person revocation or attribution. Keep access narrow and do not treat it as sufficient for live investigations.
+- The shared credential is retired. Users can read/add/verify; supervisors can also edit and invite users; web masters manage accounts, role assignments, bulk camera operations and audit access. Account aliases are not verified officer identities. User access removal clears its active alias and credentials, revokes sessions/invitations, and retains only an opaque account ID for audit. Keep access narrow and do not treat this as sufficient for live investigations.
+- Account aliases, hashed credentials/recovery codes, roles and actor IDs are now stored separately from camera records. This necessary access-control data may be personal data; a zero-personal-camera-content policy must not be presented as a zero-personal-data service.
+- Invitation links can be copied or composed in the user’s mail application. Automatic email sending is not configured: an agreed verified sender address/domain is required. Email recipients are not stored by the app. Whoever holds an invitation can claim it once; send only through an approved channel after checking the recipient.
+- Application audit covers server requests/results and explicit account/camera actions. Exports require successful event recording; manual route/POV events depend on the browser contacting the server. Static page requests, offline actions and infrastructure activity are not all captured. This log is neither immutable nor a complete police audit solution.
 - The site is a responsive web application, not a separately packaged Android/iOS application. Its manifest supports a home-screen shortcut where the browser allows it. It deliberately does not cache operational data for offline use.
 
 ## Primary sources
@@ -83,3 +86,7 @@ Reviewed 10 October 2026. Recheck before operational approval.
 - [Overpass HTTP API documentation](https://dev.overpass-api.de/command_line.html) and [public-instance resource policy](https://dev.overpass-api.de/overpass-doc/en/preface/commons.html).
 - [OSRM API documentation](https://project-osrm.org/docs/v26.6.1/http).
 - [Cloudflare Workers Web Crypto](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/).
+
+### Account release validation
+
+All 16 automated tests pass, including real SQLite-backed permission and invitation tests. Live checks confirmed the initial web master role, registration at the invitation’s assigned role, denial of user administration/edit access, immediate session revocation on removal, and web-master-only audit access. The temporary QA account was removed and its invitation revoked; no invitation email was sent. Existing live camera/photo/CSRF/concurrency checks also pass, with the temporary camera and photo removed. A synthetic browser fixture verified route reset, new-route selection, the POV cone and phone administration layout; that fixture was deleted after review.
