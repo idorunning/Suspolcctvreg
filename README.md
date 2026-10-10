@@ -1,127 +1,61 @@
-# Sussex CCTV Registry
+# CCTV Enquiries — Sussex Camera Register
 
-A small-team camera registry for use on a shared SharePoint / OneDrive folder.
-Created by **Nathan Tracey · Sussex Police · nathan.tracey@sussex.police.uk**.
+Responsive CCTV enquiry **test application**. This replaces the previous shared-file prototype with a Cloudflare Worker, a private D1 database and a responsive React/Leaflet interface.
 
-The app is a **single self-contained HTML file**. You drop it in a SharePoint
-folder, share that folder with a handful of trusted colleagues, set one
-shared password, and everyone with the password can read and edit the same
-data — much like a password-protected Excel workbook.
+**Test site:** https://suspol-cctv-test.ntracey.workers.dev/
 
-## What it does
+This is not an accredited police system. Use public-facing camera test data only, never live investigation details. Read [the operational readiness and data review](docs/operational-readiness.md) before extending its use.
 
-- Map of cameras with markers, direction arrows and field-of-view cones.
-- Add / edit / delete cameras, with a PII filter that blocks anything that
-  looks like personal data.
-- **Quick add** mode for officers on foot — geolocation, four big type
-  buttons, a direction dial that can read the phone compass, and a one-tap
-  save.
-- **Pick an area** circle filter — draw a circle and export only the cameras
-  inside it as a CSV.
-- Base layer switcher — Road / Plain / Satellite (Esri) / Humanitarian.
-- **Possible camera sites** overlay — petrol stations, supermarkets
-  (Tesco / Asda / Sainsbury's / Morrisons / Aldi / Lidl / Co-op / Iceland /
-  Waitrose / M&S) and already-mapped public CCTV, fetched live from
-  OpenStreetMap.
-- **Live feeds dashboard** — opens public webcam / traffic feeds in a new
-  browser tab (not embedded, to avoid the broken-iframe behaviour caused by
-  third-party `X-Frame-Options`).
-- CSV export of all cameras, area-only export when a circle is active.
+## What is implemented
 
-## How it works
+- Camera markers cluster as the map zooms out, separate as it zooms in, and spread coincident markers at maximum zoom. Marker size adapts to zoom. Optional view cones are explicitly approximate.
+- Desktop map/list workspace and mobile map, camera list, route and quick-add navigation.
+- A-to-B indicative **driving** routes through an explicitly enabled OSRM test service. Manually trace a walking/observed route without calling a routing provider. Select a 25/50/100/200-metre corridor; camera candidates appear in travel order.
+- CSV export with formula-injection protection and an email **draft** opened in the user's mail client. The app does not send email or store recipients.
+- GPS or map-position quick add, structured public premises details, verified organisation phone numbers, asset references, camera view estimates and reported retention.
+- Camera reference photos, canvas redaction, client resizing and JPEG re-encoding, server metadata stripping, authenticated later viewing and deletion.
+- Optional OpenStreetMap/Overpass business suggestions with explicit coordinate-sharing notice and source attribution. Manual entry remains available. The external lookup was unavailable in live API testing; further testing was blocked by automatic approval review pending specific authorisation to transmit camera coordinates to Overpass. It is not a verified integration.
+- Server-enforced password login, secure HTTP-only sessions, CSRF/origin checks, login throttling, optimistic concurrency, strict field allow-list, private/no-store API responses, CSP and disabled Worker application logs.
+- No personal contact fields, footage uploads, ANPR or residential camera category; no localStorage or IndexedDB camera database. No tracking/analytics scripts or service-worker cache.
 
-- All data lives in **one encrypted JSON file** (`cctv-data.json`) in the
-  OneDrive / SharePoint folder you choose. The file is encrypted with the
-  shared password using AES-GCM-256, derived via PBKDF2-SHA256
-  (210 000 iterations).
-- The app reads and writes that file using the browser's File System Access
-  API. Chrome / Edge on desktop and Android Chrome are supported. iOS Safari
-  is not.
-- OneDrive sync distributes the file to every team member's machine.
-- Concurrent edits are not auto-merged. The app detects when the file has
-  changed under it and prompts you to reload before saving — exactly like
-  password-protected Excel.
+## Test import
 
-## Set it up
+71 source rows were reviewed: **58 imported, 13 held out**. Officer emails, creator identifiers, original IDs, timestamps and the ambiguous existing reference were omitted. The original attachment was not modified. All imported entries remain **unverified**; all addresses were absent in the source. Camera coordinates are not evidence of current operation or coverage. Raw and sanitised seed files are intentionally **not committed to this public repository**.
 
-1. Build the single HTML file:
-   ```sh
-   npm install
-   npm run build
-   ```
-   The output is `dist/sussex-cctv-registry.html` (~1 MB).
-2. Put `sussex-cctv-registry.html` in a shared SharePoint / OneDrive folder
-   (e.g. `Documents/CCTV Registry/`).
-3. Share that folder with your colleagues.
-4. Each person opens the file via OneDrive sync (it ends up in
-   `…/OneDrive - Sussex Police/CCTV Registry/`), double-clicking it to open
-   in Chrome or Edge.
-5. First user: chooses the folder, sets the shared password.
-6. Other users: choose the same folder, enter the shared password.
-7. Tell colleagues the password securely (Teams DM, in person — not in the
-   same file).
+Run the private import preparation only with an authorised input file:
 
-### If SharePoint blocks `.html` upload
+```sh
+python scripts/import-test-data.py /private/path/input.csv private
+```
 
-Some Microsoft 365 tenants ban uploading `.html` files. Workarounds:
+## Local development
 
-- **Zip it.** Upload `sussex-cctv-registry.zip`; users unzip locally inside
-  their OneDrive folder.
-- **Rename to `.htm`.** Most tenants only block `.html`.
-- **Distribute the app via Teams / email** and only keep `cctv-data.json` in
-  the shared folder.
+Node 22+ is recommended. Install dependencies, build, initialise a local database and set local test secrets:
 
-## Day-to-day use
+```sh
+npm ci
+npm run build
+npx wrangler d1 migrations apply suspol-cctv-test --local
+node scripts/create-test-access.mjs
+npm run worker
+```
 
-- **Add a camera**: click "Add a camera" in the sidebar, click the map to
-  drop the pin, fill in the form, save.
-- **Quick add (mobile)**: tap "Quick add" → location is captured → tap a
-  type → drag the dial or use the phone compass → save.
-- **Pick an area**: open the map controls (top-right), click "Filter Area by
-  Circle", draw on the map, then export the cameras inside as a CSV.
-- **Possible sites**: toggle the "Possible sites" button in the header to
-  show petrol stations, supermarkets and existing public CCTV from OSM.
-  Click any of them to pre-fill the Add Camera form.
-- **Lock the app**: the lock button in the top-right clears the password
-  from memory.
+`create-test-access.mjs` writes a randomly generated password and credential hash into ignored `private/access.json` and `.dev.vars`, not into client code. Open the local Worker URL printed by Wrangler. For live frontend editing, run `npm run dev` in a second terminal; Vite proxies `/api` to the local Worker. GPS/camera support depends on a secure context and device permissions. Localhost is suitable for desktop testing; use the HTTPS test site on a phone.
 
-## Limits and risks (please read)
+Optional local seed: `npx wrangler d1 execute suspol-cctv-test --local --file=private/seed.sql`.
 
-- **No password recovery.** If the password is lost, the data is
-  unrecoverable. Use **Settings → Download CSV backup** regularly.
-- **Concurrent edits.** Two people saving at the same time will produce a
-  OneDrive conflict copy. The app warns the second saver, but accept that
-  some overwrite risk exists.
-- **No per-officer audit.** Everyone shares the password. Camera entries
-  show whoever's "initials" were entered, but those are informational, not
-  authentication.
-- **iOS Safari is not supported.** Use Chrome / Edge on a laptop or Android.
-- **Map tiles and Overpass POIs come from public services**
-  (OpenStreetMap, Esri, Nominatim, Overpass). Each request goes out from
-  the user's browser; this is fine for small-team use under their fair-use
-  policies. Don't put the file on a public-internet device and don't share
-  with strangers.
-- **Data classification.** Storage is the Sussex Police M365 tenant —
-  the correct place — but this tool is **unofficial**. Get force IG sign-off
-  before storing real registry data.
+## Deploy / maintain
 
-## What was removed (vs. earlier iterations)
+`wrangler.jsonc` describes the Worker, D1 binding and 15-minute housekeeping schedule. Authenticate Wrangler against the authorised Cloudflare account, apply migrations with `--remote`, then use `npm run deploy`. Set `AUTH_CREDENTIAL` and `RATE_SECRET` with `wrangler secret put`; never use a `VITE_` variable for secrets. `AUTH_CREDENTIAL` is JSON with a random hex salt and a PBKDF2-SHA256 hash (100,000 iterations, 32 bytes); see the local helper.
 
-This pivot replaces an earlier multi-officer, server-backed build
-(Express + Postgres + LDAP) with a single-file local app. The following
-features are no longer present and would need a backend to exist:
+The current deployment was uploaded through the Cloudflare connector as ES modules with the built public assets embedded in a separate module. The Worker serves these through the same application handler, security headers and API code. `scripts/prepare-connector-deploy.mjs` prepares the upload payload locally. Camera seed data and credentials are never bundled. GitHub auto-deployment is **not configured**: a later source commit needs a deliberate deployment or an approved CI setup.
 
-- Real-time multi-user sync via Server-Sent Events
-- Per-officer accounts (LDAP), audit log, bulk officer invites
-- 3-day temporary access windows
-- Server-enforced role-based access control
+Password rotation: replace `AUTH_CREDENTIAL`, then delete existing `sessions` through an authorised database maintenance operation. Changing the password alone does not revoke already-issued sessions. Deployments preserve secrets and data. Use a separate database for any future operational environment.
 
-## Credits
+Housekeeping removes expired sessions, old login-throttle counters and audit events older than 14 days. Sessions expire after 30 minutes without an API request or eight hours maximum. The UI locks after approximately 29 minutes without pointer/keyboard interaction. Photo bytes are bounded JPEG BLOBs in a separate table for this small pilot; migrate to private, approved object storage if scale requires it.
 
-- App by **Nathan Tracey**, Sussex Police.
-- Map tiles by [OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
-- Satellite imagery by Esri (World Imagery service).
-- Place search by [Nominatim](https://nominatim.openstreetmap.org/) (OSM).
-- POI lookups by [Overpass API](https://overpass-api.de/) (OSM).
-- Built with React, Vite, Leaflet, react-leaflet, Tailwind CSS, lucide-react,
-  recharts and papaparse.
+## Validation
+
+`npm run lint`, `npm test`, `npm run build` and `npm audit` pass. Eight unit tests cover content validation, metadata removal, route corridor ordering and CSV injection. Live API tests covered login, unauthorised reads, CSRF, personal/unknown field rejection, photo persistence, concurrent updates, deletion, logout and real road geometry. The temporary QA record and photo were removed. Desktop clustering, route candidate lists and mobile quick add were checked in the browser using an isolated synthetic fixture; it had no connection to the real test database. Phone GPS and physical camera capture still need a check on a real managed device.
+
+Public map/routing services have no service guarantee. A shared password has no individual accountability. Code checks cannot prove that arbitrary text or an image contains no personal data. See the documented operational blockers.

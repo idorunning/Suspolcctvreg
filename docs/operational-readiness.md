@@ -1,0 +1,81 @@
+# Operational readiness and data review
+
+10 October 2026 · CCTV Enquiries v2.0 · England and Wales
+
+## Decision
+
+Use the deployed application as a restricted, non-operational test. Do not describe it as fully data-compliant, accredited, or guaranteed free of personal data. The application now has useful technical safeguards, but organisational approval, approved suppliers, account controls and independent assurance are outstanding.
+
+Cloudflare was selected for the pilot because one Worker can enforce authentication for both the application API and photos, with D1 providing shared persistence for desktop and mobile. This avoids relying on a JavaScript-only password screen or incompatible shared-folder browser access. Netlify could also support a suitable architecture; this is not a claim that either host is automatically approved for policing.
+
+The D1 database has EU jurisdiction and read replication disabled. Cloudflare returned an Eastern Europe primary region. Neither this nor the Worker deployment guarantees UK-only processing. The force must examine support access, subprocessors, logs, backups, transfers and contractual controls across the complete service.
+
+## Data boundaries
+
+| Data                                                    | Pilot treatment                                                                            | Remaining issue                                                                                                                      |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Public-facing business/public authority camera location | Authenticated database record                                                              | Public visibility does not make an aggregated register risk-free; validate accuracy and classification                               |
+| Business name and premises address                      | Permitted subject to contributor confirmation                                              | Sole traders or home-based businesses can be identifiable individuals; exclude them where the zero-personal-content rule is required |
+| Public telephone                                        | Organisation landline/non-geographic format, source URL and explicit confirmation          | A format check cannot determine ownership; independently verify it                                                                   |
+| Police reference                                        | Camera asset reference only; no incident/crime/person references                           | If linkable to a person, it may remain personal data; decide the linking model with the DPO                                          |
+| Officer names, emails, creator IDs                      | Not imported and not accepted by the camera API                                            | Future accountability should use force identity and approved audit arrangements, not unverified initials                             |
+| ANPR, household cameras, doorbells, footage             | No supported category; no footage upload; prohibited in UI and validation                  | Human review is still needed to classify the actual camera                                                                           |
+| Reference photos                                        | JPEG re-encoding, manual blackout tool, server metadata stripping, authenticated retrieval | No automated detection of faces, plates or private information. Add reviewer approval and/or approved scanning before wider use      |
+| Investigation route                                     | In browser memory only; not saved to the application database                              | OSRM receives chosen coordinates after confirmation. Never submit operational routes to the demo provider                            |
+| Device GPS                                              | Requested by explicit action, no background tracking                                       | Camera location is stored if the user saves it; check GPS accuracy and adjust the point                                              |
+| Login/network metadata                                  | Essential session cookie, salted hashed throttle key; Worker application logging disabled  | Network providers may process IPs/technical data. A hashed network identifier can be pseudonymous personal data                      |
+| Export/email                                            | Explicit confirmation; CSV download or draft in user's client                              | Organisation controls for downloads, mail recipients and downstream retention still apply                                            |
+
+A reference replacing a name is not necessarily anonymous. The ICO distinguishes pseudonymisation from anonymisation. Part 3 of the Data Protection Act 2018 applies where a competent authority processes personal data for law-enforcement purposes; other purposes may fall under the UK GDPR regime. The force must determine the applicable regime for each activity. A privacy pop-up does not replace a lawful basis, a DPIA, or security accreditation.
+
+## Source import
+
+- 71 records in the supplied CSV; 58 retained as unverified camera candidates.
+- 13 held out: three school-site entries pending public-facing scope review; two healthcare-site entries; two unnamed entries; two locations with unconfirmed ownership/public-facing scope; one ambiguous B&B; one sensitive residential site; one internal-only entry; one care-related site.
+- Original creator emails/IDs, source IDs/timestamps and the ambiguous existing reference were excluded. No contact number was inferred. Every source address was blank.
+- The original attachment is unchanged. Neither source data nor private seed SQL is committed to the public GitHub repository.
+- Review every retained entry before any real enquiry. Multiple cameras at one business can be valid; clustering is a visual aggregation, not deduplication.
+
+## Mapping and business data
+
+**Current pilot:** OpenStreetMap tiles load only after the mapping notice is accepted; requests expose the viewed area and browser IP to the tile service. OSRM road routing is separately enabled, sends coordinates via the Worker and returns a driving route. Manual tracing makes no routing request. The public services' usage policies and availability limits apply.
+
+**Business suggestions:** the optional Overpass action searches a 150-metre area for named shops and a short list of commercial amenities. Only location coordinates, not camera IDs or case narratives, are sent. Listings may pre-fill details, keep OpenStreetMap attribution and require confirmation before saving. A shop listing is not evidence of a camera. Live testing returned an external-service-unavailable response. Further testing was automatically rejected because camera coordinates would be disclosed to Overpass without specific destination authorisation. Manual entry is the working fallback; the lookup remains unverified.
+
+**Google Places:** it can supply business details, but its storage, caching, attribution and map-display restrictions apply. Do not scrape Google Maps or persist Places content indiscriminately into this Leaflet register. The present build contains no Google API key or Google Places import. If selected later, review the current contract and implement a permitted lookup/display design. Independently verified organisation details and approved local/council datasets may be a better persistent source.
+
+**Before live policing:** procure approved tile, routing and gazetteer services (or self-host on approved infrastructure). An on-device/manual route prevents external routing disclosure, but public map tiles can still reveal the search area.
+
+## Practical next steps for Nathan
+
+1. Ask the force DPO/information-governance team and information-security team to sponsor a controlled pilot. Give them this data-flow description, hosting configuration and the intended user group.
+2. Agree who is the controller, purposes and lawful basis, Part 3/UK GDPR scope, data classification, DPIA need/content, processor contracts and any international-transfer assessment. If high risk remains, follow the applicable consultation process.
+3. Decide whether to move to force-controlled UK infrastructure or approve the proposed supplier/service configuration. Review logs, support access, subprocessors, backup retention and secure deletion. An EU database alone is insufficient assurance.
+4. Replace the shared password with force SSO or named accounts, MFA, least-privilege roles, removal of leavers and independently reviewable per-user audit. The current anonymous create/update/delete log is not an accountable police audit trail; viewing, exports and routing are not audited per officer.
+5. Approve a precise data standard: what counts as public-facing, how personal/sole-trader contacts are excluded, permitted asset references, photograph framing/redaction and who verifies additions. App validation is not a personal-data detector.
+6. Set formal review/deletion intervals. The pilot flags verification older than six months but does not automatically remove camera records. Confirm backup retention, test recovery, and agree deletion and data-rights handling.
+7. Use managed devices, an approved browser, export restrictions and approved police email. Exercise the device camera/GPS flow, accessibility, slow connections, session expiry, failed uploads and simultaneous editing with a small pilot team.
+8. Arrange independent penetration testing, threat modelling, accessibility testing and an incident-response runbook before wider deployment. Check scope against the force's security standards rather than assuming a commercial hosting badge is sufficient.
+
+## Validation and known limits
+
+- Build, TypeScript checks and eight unit tests pass; dependency audit reported zero vulnerabilities after removing obsolete dependencies and applying updates.
+- Live server checks passed for unauthorised record/photo access rejection, origin and CSRF enforcement, login/session attributes, sanitised import, unknown-field rejection, create/photo retrieval, concurrent-edit rejection, deletion and logout revocation. Road routing returned real street geometry.
+- Desktop clustering, manual route candidate ordering, mobile layout and quick-add submission were inspected with synthetic fixtures. These UI checks were separate from the real protected database.
+- No email was sent. The email function prepares a draft; long lists download a CSV for attachment.
+- No force approval, external penetration test, physical-device camera/GPS test, or successful public-business lookup is claimed.
+- A shared credential permits every holder to edit, delete and export the test register. It has no per-person revocation or attribution. Keep access narrow and do not treat it as sufficient for live investigations.
+- The site is a responsive web application, not a separately packaged Android/iOS application. Its manifest supports a home-screen shortcut where the browser allows it. It deliberately does not cache operational data for offline use.
+
+## Primary sources
+
+Reviewed 10 October 2026. Recheck before operational approval.
+
+- [Data Protection Act 2018, Part 3](https://www.legislation.gov.uk/ukpga/2018/12/part/3) — including security, DPIA and consultation duties.
+- [ICO guide to law enforcement processing](https://ico.org.uk/for-organisations/law-enforcement/guide-to-le-processing/).
+- [ICO pseudonymisation guidance](https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/data-sharing/anonymisation/pseudonymisation/).
+- [ICO: carrying out a DPIA](https://ico.org.uk/for-organisations/uk-gdpr-guidance-and-resources/accountability-and-governance/data-protection-impact-assessments-dpias/how-do-we-do-a-dpia/).
+- [Google Places API policies](https://developers.google.com/maps/documentation/places/web-service/policies) and [Maps Platform service-specific terms](https://cloud.google.com/maps-platform/terms/maps-service-terms).
+- [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/) and [copyright/licence](https://www.openstreetmap.org/copyright).
+- [OSRM API documentation](https://project-osrm.org/docs/v26.6.1/http).
+- [Cloudflare Workers Web Crypto](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/).

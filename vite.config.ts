@@ -1,26 +1,11 @@
-import tailwindcss from '@tailwindcss/vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
-import { defineConfig } from 'vite';
-import { viteSingleFile } from 'vite-plugin-singlefile';
-
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 export default defineConfig({
-  plugins: [react(), tailwindcss(), viteSingleFile({ removeViteModuleLoader: true })],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, '.'),
-    },
-  },
-  build: {
-    target: 'es2022',
-    assetsInlineLimit: 100 * 1024 * 1024,
-    chunkSizeWarningLimit: 4096,
-    cssCodeSplit: false,
-    rollupOptions: {
-      output: { inlineDynamicImports: true },
-    },
-  },
+  plugins: [react()],
+  build: { target: "es2022" },
   server: {
-    hmr: process.env.DISABLE_HMR !== 'true',
+    host: "0.0.0.0",
+    port: 3000,
+    proxy: { "/api": "http://127.0.0.1:8787" },
   },
 });
