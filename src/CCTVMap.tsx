@@ -151,7 +151,7 @@ export default function CCTVMap(props: Props) {
       .filter(() => showCoverage)
       .forEach((c) =>
         L.polygon(wedge(c), {
-          color: c.kind === "council" ? "#185b92" : "#087f80",
+          color: c.kind === "council" ? "#123354" : "#174d80",
           fillOpacity: c.id === props.selected ? 0.3 : 0.18,
           weight: c.id === props.selected ? 2 : 1,
           interactive: false,
@@ -257,7 +257,8 @@ export default function CCTVMap(props: Props) {
         aria-pressed={showCoverage}
         onClick={() => setShowCoverage((v) => !v)}
       >
-        <Layers size={17} /> All POVs <strong>{showCoverage ? "On" : "Off"}</strong>
+        <Layers size={17} /> All POVs{" "}
+        <strong>{showCoverage ? "On" : "Off"}</strong>
       </button>
       <div className="map-legend">
         <span>
@@ -274,7 +275,8 @@ export default function CCTVMap(props: Props) {
       </div>
       {showCoverage && (
         <div className="coverage-note">
-          Estimated views • direction, angle and range. Obstructions may limit coverage.
+          Estimated views • direction, angle and range. Obstructions may limit
+          coverage.
         </div>
       )}
     </div>

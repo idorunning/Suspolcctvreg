@@ -6,6 +6,10 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
+  Footprints,
+  Car,
   Clock3,
   FileDown,
   Focus,
@@ -72,13 +76,13 @@ function PrivacyContent() {
       </p>
       <h3>Maps, routes and location</h3>
       <p>
-        OpenStreetMap receives your IP address and the map tiles you view. Road
-        routing sends the chosen coordinates through this server to the public
-        OSRM demonstration service. It is an indicative driving route, not an
-        evidential reconstruction. Manual tracing does not send a routing
-        request. Optional nearby-business lookup sends the camera coordinates to
-        OpenStreetMap’s Overpass service; listings require your review and do
-        not establish camera presence.
+        OpenStreetMap receives your IP address and the map tiles you view.
+        Walking and driving routing send every chosen anchor through this server
+        to FOSSGIS at routing.openstreetmap.de, which logs route requests.
+        Routes are indicative, not an evidential reconstruction. Manual tracing
+        does not send a routing request. Optional nearby-business lookup sends
+        the camera coordinates to OpenStreetMap’s Overpass service; listings
+        require your review and do not establish camera presence.
       </p>
       <p>
         GPS is requested only when you press a location button. It is not
@@ -329,7 +333,9 @@ export default function App() {
     [toast, setToast] = useState("");
   const [waypoints, setWaypoints] = useState<Point[]>([]),
     [route, setRoute] = useState<Point[]>([]),
-    [routeMode, setRouteMode] = useState<"road" | "trace">("road"),
+    [routeMode, setRouteMode] = useState<"driving" | "walking" | "trace">(
+      "driving",
+    ),
     [routeBusy, setRouteBusy] = useState(false),
     [routeDistance, setRouteDistance] = useState(0),
     [radius, setRadius] = useState(50),
@@ -344,6 +350,13 @@ export default function App() {
     [manualPoint, setManualPoint] = useState("");
   const [mapCentre, setMapCentre] = useState<Point>(defaultPoint);
   const routeVersion = useRef(0);
+  const [cameraListExpanded, setCameraListExpanded] = useState(false);
+  const routePanel = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (routePanel.current) routePanel.current.scrollTop = 0;
+  }, [cameraListExpanded]);
+  const listDrag = useRef<number | null>(null);
+  const listDragged = useRef(false);
   const notify = useCallback((text: string) => {
     setToast(text);
   }, []);
@@ -458,6 +471,7 @@ export default function App() {
   function clearRoute(startNew = false) {
     invalidateRoute();
     setWaypoints([]);
+    setCameraListExpanded(false);
     setPicking(startNew ? (routeMode === "trace" ? "trace" : "a") : null);
     setManualPoint("");
     setRouteNotice(false);
@@ -473,6 +487,7 @@ export default function App() {
     setRouteDistance(0);
     setRouteError("");
     setRouteBusy(false);
+    setCameraListExpanded(false);
   }
   function setPoints(points: Point[]) {
     invalidateRoute();
@@ -495,9 +510,29 @@ export default function App() {
       setPicking("b");
       notify("Start set. Now choose the end point.");
     } else if (picking === "b") {
-      setPoints([waypoints[0] || defaultPoint, p]);
+      setPoints(
+        waypoints.length > 1
+          ? [...waypoints.slice(0, -1), p]
+          : [waypoints[0] || defaultPoint, p],
+      );
       setPicking(null);
       setTab("route");
+    } else if (picking === "via") {
+      if (waypoints.length >= 12)
+        return notify("A route can contain up to 12 points.");
+      setPoints([
+        ...waypoints.slice(0, -1),
+        p,
+        waypoints[waypoints.length - 1],
+      ]);
+      setPicking(null);
+      notify(
+        "Sighting added before B. Reorder sightings if needed, then calculate the route.",
+      );
+    } else if (picking?.startsWith("anchor:")) {
+      const index = Number(picking.split(":")[1]);
+      setPoints(waypoints.map((point, i) => (i === index ? p : point)));
+      setPicking(null);
     } else if (picking === "trace") {
       if (waypoints.length >= 12) {
         notify("A route can contain up to 12 points.");
@@ -539,11 +574,16 @@ export default function App() {
     try {
       const r = await api("/route", {
         method: "POST",
-        body: JSON.stringify({ points: waypoints, externalConsent: true }),
+        body: JSON.stringify({
+          points: waypoints,
+          mode: routeMode,
+          externalConsent: true,
+        }),
       });
       if (version !== routeVersion.current) return;
       setRoute(r.points);
       setRouteDistance(r.distance);
+      setCameraListExpanded(true);
       setPicking(null);
       notify("Route ready. Camera candidates are listed in route order.");
     } catch (e) {
@@ -587,7 +627,7 @@ export default function App() {
         `${i + 1}. ${c.name}\n${c.address || "Address not recorded"}\n${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}${c.publicPhone ? "\nPublic tel: " + c.publicPhone : ""}\nAsset: ${c.assetReference || c.id}\nVerified: ${dateLabel(c.verifiedAt)}`,
     );
     let body =
-      `CCTV enquiry candidates — TEST ONLY\n${exportCameras.length} cameras${tab === "route" ? ` within ${radius} m of the ${routeMode === "road" ? "indicative driving" : "manually traced"} route` : ""}. Proximity does not confirm footage coverage. Verify location, view and retention.\n\n` +
+      `CCTV enquiry candidates — TEST ONLY\n${exportCameras.length} cameras${tab === "route" ? ` within ${radius} m of the ${routeMode === "trace" ? "manually traced" : `indicative ${routeMode}`} route` : ""}. Proximity does not confirm footage coverage. Verify location, view and retention.\n\n` +
       lines.join("\n\n");
     if (body.length > 9000) {
       await download();
@@ -619,9 +659,13 @@ export default function App() {
           ? "Choose point B · route end"
           : picking === "trace"
             ? "Tap to trace the route · add points at each turn"
-            : null;
+            : picking === "via"
+              ? "Choose an intermediate sighting · anchor before B"
+              : picking?.startsWith("anchor:")
+                ? "Choose the replacement sighting location"
+                : null;
   const cameraList = (
-    <div className="camera-list">
+    <div className="camera-list" id="route-camera-list">
       {loading ? (
         <div className="empty">
           <RefreshCw className="spin" />
@@ -815,14 +859,24 @@ export default function App() {
         </div>
         <main id="workspace" className={"main-layout tab-" + tab}>
           <section
-            className="side-panel"
+            ref={routePanel}
+            className={
+              "side-panel " +
+              (tab === "route" && cameraListExpanded
+                ? "route-list-expanded"
+                : "")
+            }
             aria-label={
               tab === "route"
                 ? "Route enquiry controls"
                 : "Camera search and list"
             }
           >
-            <div className="panel-top">
+            <div
+              className="panel-top"
+              id="route-input-controls"
+              hidden={tab === "route" && cameraListExpanded}
+            >
               <div className="eyebrow">
                 {tab === "route" ? "BUILD AN ENQUIRY" : "YOUR CAMERA REGISTER"}
               </div>
@@ -898,29 +952,47 @@ export default function App() {
               )}
               {tab === "route" && (
                 <>
-                  <div className="segmented">
-                    <button
-                      className={routeMode === "road" ? "active" : ""}
-                      onClick={() => {
-                        setRouteMode("road");
-                        setWaypoints([]);
-                        invalidateRoute();
-                        setPicking(null);
-                      }}
-                    >
-                      Road route
-                    </button>
-                    <button
-                      className={routeMode === "trace" ? "active" : ""}
-                      onClick={() => {
-                        setRouteMode("trace");
-                        setWaypoints([]);
-                        invalidateRoute();
-                        setPicking(null);
-                      }}
-                    >
-                      Trace manually
-                    </button>
+                  <div
+                    className="segmented route-modes"
+                    aria-label="Route travel mode"
+                  >
+                    {(["driving", "walking", "trace"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        aria-pressed={routeMode === mode}
+                        className={routeMode === mode ? "active" : ""}
+                        onClick={() => {
+                          setRouteMode(mode);
+                          invalidateRoute();
+                          setPicking(null);
+                          if (mode === "trace" && waypoints.length > 1) {
+                            setRoute(waypoints);
+                            setRouteDistance(
+                              waypoints
+                                .slice(1)
+                                .reduce(
+                                  (sum, p, i) =>
+                                    sum + distance(waypoints[i], p),
+                                  0,
+                                ),
+                            );
+                          }
+                        }}
+                      >
+                        {mode === "driving" ? (
+                          <Car size={16} />
+                        ) : mode === "walking" ? (
+                          <Footprints size={16} />
+                        ) : (
+                          <Route size={16} />
+                        )}
+                        {mode === "trace"
+                          ? "Manual"
+                          : mode === "walking"
+                            ? "Walking"
+                            : "Driving"}
+                      </button>
+                    ))}
                   </div>
                   <div className="route-points">
                     <button
@@ -941,6 +1013,70 @@ export default function App() {
                       </span>
                       <MapPin size={17} />
                     </button>
+                    {waypoints.slice(1, -1).map((point, i) => (
+                      <div className="anchor-row" key={i}>
+                        <button
+                          className={
+                            picking === `anchor:${i + 1}`
+                              ? "point active"
+                              : "point"
+                          }
+                          onClick={() => {
+                            setPicking(`anchor:${i + 1}`);
+                            setSelected(null);
+                          }}
+                        >
+                          <b>{i + 1}</b>
+                          <span>
+                            <strong>Sighting {i + 1}</strong>
+                            <small>
+                              {point.lat.toFixed(5)}, {point.lng.toFixed(5)}
+                            </small>
+                          </span>
+                          <MapPin size={16} />
+                        </button>
+                        <div className="anchor-actions">
+                          <button
+                            aria-label={`Move sighting ${i + 1} earlier`}
+                            disabled={i === 0}
+                            onClick={() => {
+                              const next = [...waypoints];
+                              [next[i], next[i + 1]] = [next[i + 1], next[i]];
+                              setPoints(next);
+                              setPicking(null);
+                            }}
+                          >
+                            <ChevronUp size={16} />
+                          </button>
+                          <button
+                            aria-label={`Move sighting ${i + 1} later`}
+                            disabled={i === waypoints.length - 3}
+                            onClick={() => {
+                              const next = [...waypoints];
+                              [next[i + 1], next[i + 2]] = [
+                                next[i + 2],
+                                next[i + 1],
+                              ];
+                              setPoints(next);
+                              setPicking(null);
+                            }}
+                          >
+                            <ChevronDown size={16} />
+                          </button>
+                          <button
+                            aria-label={`Remove sighting ${i + 1}`}
+                            onClick={() => {
+                              setPoints(
+                                waypoints.filter((_, index) => index !== i + 1),
+                              );
+                              setPicking(null);
+                            }}
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                     <div className="point-connector" />
                     <button
                       className={picking === "b" ? "point active" : "point"}
@@ -959,6 +1095,19 @@ export default function App() {
                       <MapPin size={17} />
                     </button>
                   </div>
+                  {routeMode !== "trace" && (
+                    <button
+                      className="secondary full add-sighting"
+                      disabled={waypoints.length < 2 || waypoints.length >= 12}
+                      onClick={() => {
+                        setPicking("via");
+                        setSelected(null);
+                      }}
+                    >
+                      <Plus size={17} /> Add intermediate sighting (
+                      {Math.max(0, waypoints.length - 2)}/10)
+                    </button>
+                  )}
                   {picking && picking !== "add" && (
                     <form
                       className="coordinate-entry"
@@ -995,7 +1144,7 @@ export default function App() {
                       </button>
                     </form>
                   )}
-                  {routeMode === "road" ? (
+                  {routeMode !== "trace" ? (
                     <button
                       className="primary full"
                       disabled={waypoints.length < 2 || routeBusy}
@@ -1003,7 +1152,7 @@ export default function App() {
                     >
                       <Route size={18} />
                       {routeBusy
-                        ? "Finding road route…"
+                        ? `Finding ${routeMode} route…`
                         : "Find cameras along route"}
                     </button>
                   ) : (
@@ -1049,10 +1198,30 @@ export default function App() {
                     </button>
                   </div>
                   <p className="help">
-                    {routeMode === "road"
-                      ? "Indicative driving route. For a walking or observed path, trace it manually."
+                    {routeMode !== "trace"
+                      ? `Indicative ${routeMode} route via every anchor, in order. ${routeMode === "walking" ? "Uses mapped pedestrian links and footpaths; access and obstructions need checking." : "Follows mapped roads and driving restrictions."}`
                       : "Connect points at each turn. Lines follow your chosen points, not the road network."}
                   </p>
+                  {routeMode !== "trace" && (
+                    <p className="help routing-credit">
+                      Routing:{" "}
+                      <a
+                        href="https://routing.openstreetmap.de/about.html"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        FOSSGIS / OSRM
+                      </a>{" "}
+                      · © OpenStreetMap contributors ·{" "}
+                      <a
+                        href="https://www.openstreetmap.org/fixthemap"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Fix the map
+                      </a>
+                    </p>
+                  )}
                   <label className="radius-label">
                     <span>Search either side of route</span>
                     <select
@@ -1076,11 +1245,14 @@ export default function App() {
                     <div className="route-summary">
                       <div>
                         <strong>
-                          {(routeDistance / 1000).toFixed(2)} <small>km</small>
+                          {(routeDistance / 1609.344).toFixed(2)}{" "}
+                          <small>miles</small>
                         </strong>
                         <span>
-                          {routeMode === "road"
-                            ? "Driving route"
+                          {routeMode !== "trace"
+                            ? routeMode === "walking"
+                              ? "Walking route"
+                              : "Driving route"
                             : "Manual trace"}
                         </span>
                       </div>
@@ -1105,14 +1277,68 @@ export default function App() {
                 </>
               )}
             </div>
-            <div className="list-heading">
-              <span>
-                {tab === "route" && route.length > 1
-                  ? "CAMERAS IN ROUTE ORDER"
-                  : "CAMERA LOCATIONS"}
-              </span>
-              <b>{displayed.length}</b>
-            </div>
+            {tab === "route" && route.length > 1 ? (
+              <button
+                className="list-heading route-list-toggle"
+                aria-expanded={cameraListExpanded}
+                aria-controls="route-camera-list"
+                onPointerDown={(e) => {
+                  listDrag.current = e.clientY;
+                  listDragged.current = false;
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                }}
+                onPointerUp={(e) => {
+                  if (
+                    listDrag.current !== null &&
+                    Math.abs(e.clientY - listDrag.current) > 25
+                  ) {
+                    setCameraListExpanded(e.clientY < listDrag.current);
+                    listDragged.current = true;
+                  }
+                  listDrag.current = null;
+                }}
+                onPointerCancel={() => {
+                  listDrag.current = null;
+                }}
+                onClick={() => {
+                  if (!listDragged.current) setCameraListExpanded((v) => !v);
+                  listDragged.current = false;
+                }}
+              >
+                <span className="list-grip" aria-hidden="true" />
+                <span>
+                  CAMERAS IN ROUTE ORDER <b>{displayed.length}</b>
+                  <small>
+                    {(routeDistance / 1609.344).toFixed(2)} miles ·{" "}
+                    {routeMode === "trace"
+                      ? "Manual trace"
+                      : routeMode === "walking"
+                        ? "Walking"
+                        : "Driving"}{" "}
+                    · {waypoints.length} anchors
+                  </small>
+                  <small>
+                    {cameraListExpanded
+                      ? "Lower list · edit route"
+                      : "Raise list · view cameras"}
+                  </small>
+                </span>
+                {cameraListExpanded ? (
+                  <ChevronDown size={20} />
+                ) : (
+                  <ChevronUp size={20} />
+                )}
+              </button>
+            ) : (
+              <div className="list-heading">
+                <span>
+                  {tab === "route" && route.length > 1
+                    ? "CAMERAS IN ROUTE ORDER"
+                    : "CAMERA LOCATIONS"}
+                </span>
+                <b>{displayed.length}</b>
+              </div>
+            )}
             {error && (
               <div className="form-error" role="alert">
                 {error}
@@ -1521,8 +1747,8 @@ export default function App() {
               <strong>
                 OpenStreetMap receives your IP address and the area you view.
               </strong>{" "}
-              Road routing has a separate confirmation before coordinates are
-              sent to OSRM.
+              Walking and driving routing have a separate confirmation before
+              coordinates are sent to FOSSGIS (routing.openstreetmap.de).
             </p>
             <p>
               Only public-facing business and public authority cameras belong
@@ -1559,14 +1785,18 @@ export default function App() {
       )}
       {routeNotice && (
         <Modal
-          title="Use external road routing?"
+          title="Use external test routing?"
           onClose={() => setRouteNotice(false)}
         >
           <div className="policy-content">
             <p>
               The selected coordinates will be sent to the public{" "}
-              <strong>OSRM demonstration service</strong> to calculate an
-              indicative driving route. Do not use operational routes here.
+              <strong>
+                FOSSGIS routing service (routing.openstreetmap.de)
+              </strong>{" "}
+              to calculate an indicative {routeMode} route through all anchors.
+              The provider logs route requests. Do not use operational routes
+              here.
             </p>
             <p>
               For a path you draw yourself, choose{" "}

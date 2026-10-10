@@ -10,7 +10,9 @@ This is not an accredited police system. Use public-facing camera test data only
 
 - Camera markers cluster as the map zooms out, separate as it zooms in, and spread coincident markers at maximum zoom. Marker size adapts to zoom. Optional view cones are explicitly approximate.
 - Desktop map/list workspace and mobile map, camera list, route and quick-add navigation.
-- A-to-B indicative **driving** routes through an explicitly enabled OSRM test service. Manually trace a walking/observed route without calling a routing provider. Select a 25/50/100/200-metre corridor; camera candidates appear in travel order.
+- **Walking or driving** routes use separate FOSSGIS/OSRM graphs after explicit test-routing consent. Add up to ten intermediate sightings between A and B; edit, remove or reorder them. Anchors retain their chosen order. Route totals use miles, with short camera offsets/corridor widths in metres. Manual tracing sends no routing request.
+- Raise the **Cameras in route order** header to expand the list; lower it to restore route controls. Supports click, keyboard and vertical swipe, including mobile.
+- Formal pale-blue, dark-blue and white interface.
 - CSV export with formula-injection protection and an email **draft** opened in the user's mail client. The app does not send email or store recipients.
 - GPS or map-position quick add, structured public premises details, verified organisation phone numbers, asset references, camera view estimates and reported retention.
 - Camera reference photos, canvas redaction, client resizing and JPEG re-encoding, server metadata stripping, authenticated later viewing and deletion.
