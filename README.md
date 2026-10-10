@@ -60,11 +60,11 @@ Housekeeping removes expired sessions, old login-throttle counters and audit eve
 
 ## Validation
 
-`npm run lint`, `npm test`, `npm run build` and `npm audit` pass. Sixteen automated tests cover content validation, metadata removal, route corridor ordering, CSV injection, business-lookup consent, response mapping and upstream failures. Live API tests covered login, unauthorised reads, CSRF, personal/unknown field rejection, photo persistence, concurrent updates, deletion, logout and real road geometry. The temporary QA record and photo were removed. Desktop clustering, route candidate lists and mobile quick add were checked in the browser using an isolated synthetic fixture; it had no connection to the real test database. Phone GPS and physical camera capture still need a check on a real managed device.
+`npm run lint`, `npm test`, `npm run build` and `npm audit` pass. Twenty-two automated tests cover content validation, metadata removal, route corridor ordering, CSV injection, business-lookup consent, response mapping and upstream failures. Live API tests covered login, unauthorised reads, CSRF, personal/unknown field rejection, photo persistence, concurrent updates, deletion, logout and real road geometry. The temporary QA record and photo were removed. Desktop clustering, route candidate lists and mobile quick add were checked in the browser using an isolated synthetic fixture; it had no connection to the real test database. Phone GPS and physical camera capture still need a check on a real managed device.
 
 An opt-in external diagnostic is available as `node scripts/check-business-lookup.mjs --authorised-overpass LAT LNG`. It sends the supplied coordinates to Overpass through the live Worker, so obtain destination-specific authorisation before running it. It stores only response counts/status in an ignored local file and revokes its test session afterwards. Routine tests never contact Overpass.
 
-Public map/routing services have no service guarantee. Account aliases are not force-verified identities; MFA and independently protected audit storage remain outstanding. Code checks cannot prove that arbitrary text or an image contains no personal data. See the documented operational blockers.
+Public map/routing services have no service guarantee. Police email addresses are not force-verified identities; MFA and independently protected audit storage remain outstanding. Code checks cannot prove that arbitrary text or an image contains no personal data. See the documented operational blockers.
 
 ## Accounts, invitations and route controls
 
@@ -76,5 +76,12 @@ Public map/routing services have no service guarantee. Account aliases are not f
 - **Web master:** all permissions, invite any role, change other accounts' roles, remove access, inspect the application event log and apply atomic bulk verification, verification removal, reported-retention updates or deletion to up to 50 cameras.
 - Invitations are hashed, expire in 24 hours, can be revoked and are consumed atomically once. Email invitation opens the approved mail application; the website does not automatically send email or store recipients' email addresses. Automatic sending requires an agreed, verified sender domain and provider configuration.
 - Access-control and session checks happen on the server, not just hidden buttons. The legacy shared password no longer signs in. Initial account credentials are delivered privately to the project owner.
-- Account aliases and opaque IDs are security metadata and can be personal data. They are separate from the camera-content schema, not exempt from governance. Removed accounts retain an opaque ID for audit but their aliases and credential material are removed from active tables.
+- Police email addresses and opaque IDs are security metadata and can be personal data. They are separate from the camera-content schema, not exempt from governance. Removed accounts retain an opaque ID for audit but their email addresses and credential material are removed from active tables.
 - Audit covers API requests/results and explicit application/account/camera actions. CSV exports and email-draft creation require a recorded event first. Manual-route and POV events are best-effort browser events; browser activity, disconnected actions, static assets and hosting infrastructure are not comprehensively logged. Logs expire after 14 days and are not immutable. No passwords, invite tokens, email recipients or investigation route coordinates are written to this log.
+
+
+## Mobile capture and email assurance update — 10 October 2026
+
+Add camera now opens a phone-first, downward form: GPS centres the map; tapping/dragging places the camera; explicit position confirmation unlocks a draggable aim/range and width cone. Sliders are available without numeric typing. Photos and site details follow. GPS is not automatically treated as the camera position.
+
+Sign-in, registration and recovery are restricted server-side to force subdomains ending `.police.uk`. Work email is account personal data, separate from camera content. Mailbox verification is implemented but **not enabled**: the owner selected a force-approved sender later. The live demonstration uses explicit `AUTH_MODE=password-test`; no verification email has been sent and accounts are not claimed to be mailbox-verified. See [activation steps](docs/email-verification-activation.md) and [command-team briefing](docs/command-team-assurance.md) in `docs/`.

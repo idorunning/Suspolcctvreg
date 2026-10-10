@@ -16,6 +16,7 @@
       "migrations_dir": "migrations",
     },
   ],
+  "vars": { "AUTH_MODE": "password-test" },
   "observability": { "enabled": false },
   "triggers": { "crons": ["*/15 * * * *"] },
 }

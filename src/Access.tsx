@@ -5,6 +5,7 @@ import type { CameraRecord } from "./domain";
 export type Account = {
   id: string;
   username: string;
+  emailVerified?: boolean;
   role: "user" | "supervisor" | "webmaster";
 };
 export const roleLabel = (r: string) =>
@@ -63,17 +64,18 @@ export function Registration({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             <p>
-              Use an account alias, not an email address or officer details.
-              Invitations expire after 24 hours and can be used once.
+              Use your force email address ending in .police.uk. Invitations
+              expire after 24 hours and can be used once.
             </p>
             <label>
-              Account alias
+              Police email address
               <input
                 required
+                type="email"
                 autoComplete="username"
+                placeholder="name@force.police.uk"
                 minLength={3}
-                maxLength={40}
-                pattern="[a-zA-Z0-9][a-zA-Z0-9_-]{2,39}"
+                maxLength={254}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
@@ -168,7 +170,7 @@ export default function Access({
   return (
     <Modal
       title="Account & administration"
-      subtitle={`${user.username} · ${roleLabel(user.role)}`}
+      subtitle={`${user.username} · ${roleLabel(user.role)} · ${user.emailVerified ? "work email verified" : "work email not yet verified"}`}
       onClose={onClose}
       wide
     >
@@ -224,7 +226,8 @@ export default function Access({
           >
             <p>
               Each account has its own permissions. Recovery codes replace
-              email-based password resets; no email address is stored.
+              email-based password resets. Your police email is stored for
+              account access only.
             </p>
             {recovery ? (
               <>
@@ -344,7 +347,7 @@ export default function Access({
                       encodeURIComponent(
                         "You have been invited to the CCTV Enquiries test workspace. This single-use link expires after 24 hours. Do not forward it.\n\n" +
                           inviteURL +
-                          "\n\nUse an account alias and save your recovery code. This system is for controlled testing, not live investigations.",
+                          "\n\nUse your .police.uk email address and save your recovery code. This system is for controlled testing, not live investigations.",
                       )
                     }
                   >
@@ -389,8 +392,8 @@ export default function Access({
           <>
             <p>
               Role changes revoke current sessions and outstanding invitations.
-              Removing access also removes the alias and password; the opaque
-              account ID remains in the event log.
+              Removing access also removes the email address and password; the
+              opaque account ID remains in the event log.
             </p>
             {users.map((u) => (
               <div className="admin-row" key={u.id}>
