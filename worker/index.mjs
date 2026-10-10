@@ -159,7 +159,7 @@ export async function places(req) {
       })),
   });
 }
-async function route(req) {
+export async function route(req) {
   const b = await payload(req, 4096);
   if (b.externalConsent !== true)
     return json(
@@ -168,8 +168,11 @@ async function route(req) {
     );
   if (!Array.isArray(b.points) || b.points.length < 2 || b.points.length > 12)
     return json({ error: "Choose between two and twelve route points." }, 400);
+  if (!["walking", "driving"].includes(b.mode))
+    return json({ error: "Choose walking or driving." }, 400);
   for (const p of b.points)
     if (
+      !p ||
       !Number.isFinite(p.lat) ||
       !Number.isFinite(p.lng) ||
       p.lat < 49 ||
@@ -182,7 +185,7 @@ async function route(req) {
     .map((p) => p.lng.toFixed(6) + "," + p.lat.toFixed(6))
     .join(";");
   const res = await fetch(
-    `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`,
+    `https://routing.openstreetmap.de/routed-${b.mode === "walking" ? "foot" : "car"}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`,
     {
       headers: { "User-Agent": "CCTV-Enquiries-Test/2.0" },
       signal: AbortSignal.timeout(15000),
@@ -190,12 +193,14 @@ async function route(req) {
   );
   if (!res.ok)
     throw new Error(
-      "Road routing is unavailable. Trace the route manually or try again.",
+      "Routing is unavailable. Trace the route manually or try again.",
     );
   const data = await res.json();
   const r = data.routes?.[0];
   if (data.code !== "Ok" || !r?.geometry?.coordinates?.length)
-    throw new Error("No road route was found. Trace the route manually.");
+    throw new Error(
+      "No route was found for this travel mode. Trace the route manually.",
+    );
   return json({
     points: r.geometry.coordinates.map((c) => ({ lat: c[1], lng: c[0] })),
     distance: r.distance,
@@ -247,7 +252,7 @@ const app = {
           user: publicUser(s),
           mode: "test",
           mapProvider: "OpenStreetMap",
-          routeProvider: "OSRM demo",
+          routeProvider: "FOSSGIS / OSRM (walking and driving)",
         });
       const accountResult = await accountRoutes(
         req,
