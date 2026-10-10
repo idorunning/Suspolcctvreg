@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "suspol-cctv-test",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "suspol-cctv-test",
+      "database_id": "80561528-ff48-4e92-b6f5-82f20ea547ed",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "observability": { "enabled": false },
+  "triggers": { "crons": ["*/15 * * * *"] },
+}

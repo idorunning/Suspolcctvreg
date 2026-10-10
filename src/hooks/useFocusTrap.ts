@@ -1,19 +1,21 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
 const FOCUSABLE_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
   '[tabindex]:not([tabindex="-1"])',
-].join(',');
+].join(",");
 
 export function useFocusTrap<T extends HTMLElement>(
   isOpen: boolean,
   onEscape?: () => void,
 ) {
   const containerRef = useRef<T | null>(null);
+  const escapeRef = useRef(onEscape);
+  escapeRef.current = onEscape;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -22,19 +24,22 @@ export function useFocusTrap<T extends HTMLElement>(
 
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const focusables = () =>
-      Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
-        .filter((el) => !el.hasAttribute('data-focus-trap-ignore'));
+      Array.from(
+        container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      ).filter((el) => !el.hasAttribute("data-focus-trap-ignore"));
 
     const first = focusables()[0];
     first?.focus();
 
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && onEscape) {
+      const dialogs = document.querySelectorAll("[role=dialog]");
+      if (dialogs.length && dialogs[dialogs.length - 1] !== container) return;
+      if (e.key === "Escape" && escapeRef.current) {
         e.stopPropagation();
-        onEscape();
+        escapeRef.current();
         return;
       }
-      if (e.key !== 'Tab') return;
+      if (e.key !== "Tab") return;
       const items = focusables();
       if (items.length === 0) {
         e.preventDefault();
@@ -52,12 +57,12 @@ export function useFocusTrap<T extends HTMLElement>(
       }
     };
 
-    document.addEventListener('keydown', handleKey);
+    document.addEventListener("keydown", handleKey);
     return () => {
-      document.removeEventListener('keydown', handleKey);
+      document.removeEventListener("keydown", handleKey);
       previouslyFocused?.focus?.();
     };
-  }, [isOpen, onEscape]);
+  }, [isOpen]);
 
   return containerRef;
 }
